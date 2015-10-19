@@ -94,10 +94,11 @@ size_t CStereoSLAMKF::m_last_match_ID = 0;							// Initial value of the matches
  -------------------------------------------- */
 static void performStereoSLAM()
 {
-	opengl_params.span_tree_max_depth			= 50;//2*rba.parameters.srba.max_tree_depth;
+	opengl_params.span_tree_max_depth			= 1000;//2*rba.parameters.srba.max_tree_depth;
 	opengl_params.draw_unknown_feats_ellipses	= false;
 	opengl_params.show_unknown_feats_ids		= false;
 	opengl_params.draw_unknown_feats			= false;
+	opengl_params.draw_kf_hierarchical			= true;
 
 	define_kf_times.reserve(3000);
 	stats.reserve(3000);
@@ -250,14 +251,15 @@ static void performStereoSLAM()
 	// ----------------------------------------- end of initialize stereo camera & visual odometer
 
     // INITIALIZE SRBA -----------------------------------------
-    //  :: camera
+	//  :: camera
     rba.parameters.sensor.camera_calib.leftCamera       = stereo_slam_options.stCamera.leftCamera;
     rba.parameters.sensor.camera_calib.rightCamera      = stereo_slam_options.stCamera.rightCamera;
     rba.parameters.sensor.camera_calib.rightCameraPose  = stereo_slam_options.stCamera.rightCameraPose;
-    rba.parameters.sensor_pose.relative_pose = image_pose_on_robot; 
+	rba.parameters.sensor_pose.relative_pose			= image_pose_on_robot; 
     current_pose = camera_pose_on_robot_rvt;							// initial pose of the camera: Z forwards, Y downwards, X to the right
 
 	//  :: topology
+	/** In the new version, this cannot be selected from ini file/
 	const int edge_policy = config.read_int("SRBA","srba_edge_policy",1,false);
 	switch( edge_policy )
 	{
@@ -265,13 +267,14 @@ static void performStereoSLAM()
 		case 1: rba.parameters.srba.edge_creation_policy = mrpt::srba::ecpICRA2013; break;
 		default: rba.parameters.srba.edge_creation_policy = mrpt::srba::ecpStarGraph; break;
 	}
+	/**/
 	mrpt::system::pause();
 	rba.parameters.srba.max_tree_depth				= config.read_int("SRBA","srba_max_tree_depth",3,false);
 	rba.parameters.srba.max_optimize_depth			= config.read_int("SRBA","srba_max_optimize_depth",3,false);
 
     //  :: other
     rba.setVerbosityLevel( config.read_int("SRBA","srba_verbosity", 0, false) );	// 0: None; 1:Important only; 2:Verbose
-	rba.parameters.srba.submap_size					= config.read_int("SRBA","srba_submap_size",15,false);
+	rba.parameters.ecp.submap_size					= config.read_int("SRBA","srba_submap_size",15,false);
 	rba.parameters.obs_noise.std_noise_observations = 0.5;							// pixels
 	rba.parameters.srba.use_robust_kernel           = config.read_bool("SRBA","srba_use_robust_kernel",true,false);
 	rba.parameters.srba.use_robust_kernel_stage1    = config.read_bool("SRBA","srba_use_robust_kernel_stage1",true,false);
@@ -1176,6 +1179,7 @@ static void performStereoSLAM()
 							tLog_define_kf.leave("define_kf");
 							stats.push_back( TStatsSRBA( tLog_define_kf.getMeanTime("define_kf"), listObs.size() ) );
 							tLog_define_kf.clear();
+							cout << "inserted stat #" << stats.size() << endl;
 							mrpt::system::os::fprintf(fls,"%d %.4f\n",newKFInfo.kf_id,newKFInfo.optimize_results_stg1.obs_rmse);
 						}
 						catch (exception& e)
@@ -1385,9 +1389,10 @@ static void performStereoSLAM()
 			COpenGLScenePtr & scene = final_win.get3DSceneAndLock();
 			// scene->insert(CGridPlaneXY::Create(-100,100,-100,100,0,1));
 
-			opengl_params.span_tree_max_depth			= 10*rba.parameters.srba.max_tree_depth;
+			opengl_params.span_tree_max_depth			= 1000; // 10*rba.parameters.srba.max_tree_depth;
 			opengl_params.draw_unknown_feats_ellipses	= false;
 			opengl_params.show_unknown_feats_ids		= false;
+			opengl_params.draw_kf_hierarchical			= true;
 
 			CRenderizablePtr obj = scene->getByName("srba");
 			CSetOfObjectsPtr rba_3d;

@@ -54,9 +54,8 @@
 #include <mrpt/utils/CFileStream.h>
 
 // srba
-#include <mrpt/srba.h>
-#include <mrpt/srba/RbaEngine.h>
-#include <mrpt/srba/models/observations.h>
+#define SRBA_DETAILED_TIME_PROFILING   1
+#include <srba.h>
 
 // graph-slam
 #include <mrpt/graphslam.h> // For global map recovery only
@@ -89,10 +88,10 @@ using namespace mrpt::gui;
 using namespace mrpt::opengl;
 using namespace mrpt::utils;
 using namespace mrpt::vision;
-using namespace mrpt::srba;
 using namespace mrpt::system;
 using namespace mrpt::obs;
 using namespace std;
+using namespace srba;
 
 using namespace DBoW2;
 using namespace DUtils;

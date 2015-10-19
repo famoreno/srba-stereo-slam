@@ -64,11 +64,12 @@
 #define USE_SE2 0
 
 // the options for the RBA Engine
-struct my_srba_options
+struct my_srba_options : public RBA_OPTIONS_DEFAULT
 {
+	//typedef options::observation_noise_identity			obs_noise_matrix_t;     // The sensor noise matrix is the same for all observations and equal to \sigma * I(identity)
 	typedef options::sensor_pose_on_robot_se3			sensor_pose_on_robot_t;	
-	typedef options::observation_noise_identity			obs_noise_matrix_t;     // The sensor noise matrix is the same for all observations and equal to \sigma * I(identity)
 	typedef options::solver_LM_schur_dense_cholesky     solver_t;				// Solver algorithm
+	typedef ecps::local_areas_fixed_size				edge_creation_policy_t;  
 };
 
 
@@ -187,8 +188,8 @@ public:
 		//	:: get sRBA state
 		rba_problem_state_t & my_rba_state = this->get_rba_state();
 
-		const size_t MINIMUM_OBS_TO_LOOP_CLOSURE = parameters.srba.min_obs_to_loop_closure;
-		const size_t SUBMAP_SIZE = parameters.srba.submap_size; // In # of KFs
+		const size_t MINIMUM_OBS_TO_LOOP_CLOSURE = parameters.ecp.min_obs_to_loop_closure;
+		const size_t SUBMAP_SIZE = parameters.ecp.submap_size; // In # of KFs
 		// although submaps have variable sizes from the time a loop is closed, by default they have SUBMAP_SIZE
 
 		//	:: get the current localmap base id
@@ -209,7 +210,7 @@ public:
 
 			//	:: create the edge
 			TNewEdgeInfo nei;
-			nei.has_aprox_init_val = false; // Filled in below
+			nei.has_approx_init_val = false; // Filled in below
 			nei.id = this->create_kf2kf_edge( new_kf_id, TPairKeyFrameID( currentLocalmapBaseId, new_kf_id ), obs );
 
 			if( NUM_KFS_LOCALMAP == 0 )
@@ -245,7 +246,7 @@ public:
 			typedef std::multimap<size_t,TKeyFrameID,std::greater<size_t> > my_base_sorted_lst_t;
 
 			base_sorted_lst_t obs_for_each_base_sorted;
-			make_ordered_list_base_kfs(obs, obs_for_each_base_sorted);
+			srba::internal::make_ordered_list_base_kfs<traits_t,typename rba_engine_t::rba_problem_state_t>(obs, my_rba_state, obs_for_each_base_sorted);
 				
 			//	:: make vote list for each central KF:
 			map<TKeyFrameID,size_t>  obs_for_each_area;
@@ -303,7 +304,7 @@ public:
 						TNewEdgeInfo nei;
 
 						nei.id = this->create_kf2kf_edge(new_kf_id, TPairKeyFrameID( central_kf_id, new_kf_id ), obs);
-						nei.has_aprox_init_val = false; // Will need to estimate this one
+						nei.has_approx_init_val = false; // Will need to estimate this one
 
 						new_k2k_edge_ids.push_back(nei);
 							
