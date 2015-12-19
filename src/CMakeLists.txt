@@ -1,10 +1,5 @@
 PROJECT(rba-stereoSLAM)
 
-CMAKE_MINIMUM_REQUIRED(VERSION 2.4)
-if(COMMAND cmake_policy)
-      cmake_policy(SET CMP0003 NEW)  # Required by CMake 2.7+
-endif(COMMAND cmake_policy)
-
 FIND_PACKAGE(SRBA REQUIRED)
 INCLUDE_DIRECTORIES(${SRBA_INCLUDE_DIRS})
 

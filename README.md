@@ -31,6 +31,13 @@ This software can be compiled in Windows and GNU/Linux with `gcc` or `clang`. It
 
 * Clone [stereo-vo](https://github.com/famoreno/stereo-vo) and build following instructions therein. Optionally, run `make test`
 
-* Clone the header-only library [SRBA](https://github.com/MRPT/srba). Optionally, run `make test` to ensure everything works ok. 
+* Clone the header-only library [SRBA](https://github.com/MRPT/srba). Configure and generate the project with `cmake` so `SRBAConfig.cmake` is generated and, optionally, run `make test` to ensure everything works ok. 
 
 2. Create an empty build directory, invoke `cmake` and build as usual.
+
+        mkdir build
+        cd build
+        cmake .. -DSRBA_DIR=[PATH_TO_SRBA_BUILD_DIR]
+
+
+
