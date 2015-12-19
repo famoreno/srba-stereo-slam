@@ -8,18 +8,29 @@ More info about SRBA can be found [here](http://www.mrpt.org/srba)
 
 ### Prerequisites
 
-* CMake
-* [MRPT](https://github.com/MRPT/mrpt) (>=1.3.0 ?)
-* OpenCV (>=2.4.0 ?)
-* [SRBA](https://github.com/MRPT/srba)
+* CMake (>=2.4.5)
+* OpenCV (>=2.4.8, recommended >=3.0.0)
+* [MRPT](https://github.com/MRPT/mrpt) (>=1.3.0)
+* [SRBA](https://github.com/MRPT/srba) (Header-only library, must be downloaded from GitHub for now)
 * [stereo-vo](https://github.com/famoreno/stereo-vo)
-
-Many of those can be installed in Ubuntu with:
-
-    sudo apt-get install build-essential cmake libmrpt-dev libopencv-dev
-
-**Note:** Better efficiency can be achieved if `MRPT` and `OpenCV` are compiled from sources instead of grabbed with `apt-get` by instructing the compiler to optimize for native architecture.
 
 ### Compiling
 
-...
+This software can be compiled in Windows and GNU/Linux with `gcc` or `clang`. It should also work on OSX but it is untested.
+
+1. Install all prerequisites above. Many of those can be installed in Ubuntu as follows:
+
+* Only for versions older than Ubuntu Wily (15.10):
+
+        sudo add-apt-repository ppa:joseluisblancoc/mrpt
+        sudo apt-get update
+    
+* After that, for all Debian / Ubuntu versions:
+    
+        sudo apt-get install build-essential cmake libmrpt-dev libopencv-dev
+
+* Clone [stereo-vo](https://github.com/famoreno/stereo-vo) and build following instructions therein. Optionally, run `make test`
+
+* Clone the header-only library [SRBA](https://github.com/MRPT/srba). Optionally, run `make test` to ensure everything works ok. 
+
+2. Create an empty build directory, invoke `cmake` and build as usual.
