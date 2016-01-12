@@ -1,10 +1,10 @@
-PROJECT(rba-stereoSLAM)
+PROJECT(srba-stereo-slam)
 
 FIND_PACKAGE(SRBA REQUIRED)
 INCLUDE_DIRECTORIES(${SRBA_INCLUDE_DIRS})
 
 FIND_PACKAGE(MRPT REQUIRED ${SRBA_REQUIRED_MRPT_MODULES} obs gui opengl vision hwdrivers graphslam)
-FIND_PACKAGE(OpenCV REQUIRED)
+FIND_PACKAGE(OpenCV 2.4.5 REQUIRED)
 
 SET( VO_LIB_DIR 
 		"" CACHE PATH 
@@ -22,16 +22,7 @@ SET( BOOST_INC_DIR
 		"Boost include dir" )
 
 SET( BOW2_LIB_RELEASE_DIR ${BOW2_DIR}/lib )
-#SET( BOW2_LIB_REL_UTILS ${BOW2_LIB_RELEASE_DIR}/libDUtils.lib )
-#SET( BOW2_LIB_REL_UTILSCV ${BOW2_LIB_RELEASE_DIR}/libDUtilsCV.lib )
-#SET( BOW2_LIB_REL_VISION ${BOW2_LIB_RELEASE_DIR}/libDVision.lib )
-#SET( BOW2_LIB_REL_BOW2 ${BOW2_LIB_RELEASE_DIR}/libDBoW2.lib )
-
 SET( BOW2_LIB_DEBUG_DIR ${BOW2_DIR}/lib )
-#SET( BOW2_LIB_DEB_UTILS ${BOW2_LIB_DEBUG_DIR}/libDUtils.lib )
-#SET( BOW2_LIB_DEB_UTILSCV ${BOW2_LIB_DEBUG_DIR}/libDUtilsCV.lib )
-#SET( BOW2_LIB_DEB_VISION ${BOW2_LIB_DEBUG_DIR}/libDVision.lib )
-#SET( BOW2_LIB_DEB_BOW2 ${BOW2_LIB_DEBUG_DIR}/libDBoW2.lib )
 
 IF(UNIX)
 	SET( VO_LIBS_RELEASE ${VO_LIB_DIR}/libstereo-odometry.so )
@@ -50,26 +41,15 @@ INCLUDE_DIRECTORIES(
 		${BOW2_DIR}/DVision )
 
 # Declare the target (an executable)
-ADD_EXECUTABLE( rba-stereoSLAM
-	CStereoSLAMKF.cpp 			CStereoSLAMKF.h
-	rba-stereoSLAM_utils.cpp	rba-stereoSLAM_utils.h
-	rba-stereoSLAM-common.h
-	rba-stereoSLAM_main.cpp		rba-stereoSLAM.h )
+ADD_EXECUTABLE( srba-stereo-slam
+	srba-stereo-slam_common.h	
+	CStereoSLAMKF.cpp 				CStereoSLAMKF.h
+	CSRBAStereoSLAMEstimator.cpp	CSRBAStereoSLAMEstimator.h
+	CBoWManager.h
+	srba-stereo-slam_utils.cpp		srba-stereo-slam_utils.h
+	srba-stereo-slam_main.cpp		srba-stereo-slam.h )
 
 # NOTE: It seems crucial the order of the linking libs!! First, our lib, then MRPT ones
-#SET( LINK_LIBRARIES_RELEASE optimized 
-#		${VO_LIBS_RELEASE} 
-#		${BOW2_LIB_REL_UTILS} 
-#		${BOW2_LIB_REL_UTILSCV}
-#		${BOW2_LIB_REL_VISION}
-#		${BOW2_LIB_REL_BOW2} )
-
-#SET( LINK_LIBRARIES_DEBUG debug 
-#		${VO_LIBS_DEBUG} 
-#		${BOW2_LIB_DEB_UTILS} 
-#		${BOW2_LIB_DEB_UTILSCV}
-#		${BOW2_LIB_DEB_VISION}
-#		${BOW2_LIB_DEB_BOW2} )
 IF(UNIX)
 	SET( LINK_LIBRARIES_RELEASE 
 		optimized ${VO_LIBS_RELEASE} 
@@ -100,12 +80,8 @@ ELSE(UNIX)
 		${BOW2_LIB_DEBUG_DIR}/Debug/libDBoW2.lib )
 ENDIF(UNIX)
 
-#TARGET_LINK_LIBRARIES( rba-stereoSLAM debug ${VO_LIBS_DEBUG} ${MRPT_LIBS} ${OpenCV_LIBS} ${BOW2_LIB_DEBUG_DIR}/libDUtils.lib ${BOW2_LIB_DEBUG_DIR}/libDUtilsCV.lib ${BOW2_LIB_DEBUG_DIR}/libDVision.lib ${BOW2_LIB_DEBUG_DIR}/libDBoW2.lib )
-
-#TARGET_LINK_LIBRARIES( rba-stereoSLAM optimized ${VO_LIBS_RELEASE} ${MRPT_LIBS} ${OpenCV_LIBS} ${BOW2_LIB_RELEASE_DIR}/libDUtils.lib ${BOW2_LIB_RELEASE_DIR}/libDUtilsCV.lib ${BOW2_LIB_RELEASE_DIR}/libDVision.lib ${BOW2_LIB_RELEASE_DIR}/libDBoW2.lib)
-
 TARGET_LINK_LIBRARIES( 
-	rba-stereoSLAM 
+	srba-stereo-slam 
 	${LINK_LIBRARIES_RELEASE} 
 	${LINK_LIBRARIES_DEBUG}
 	${MRPT_LIBS}

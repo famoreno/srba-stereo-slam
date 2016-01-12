@@ -33,16 +33,16 @@
    | POSSIBILITY OF SUCH DAMAGE.                                               |
    +---------------------------------------------------------------------------+ */
 #include "CStereoSLAMKF.h"
-#include "rba-stereoSLAM-common.h"
 
 #define TRACKING_WITH_F
 
-extern TAppOptions app_options;
+extern TGeneralOptions general_options;
 
+#if 0
 // ----------------------------------------------------------
 // create
 // ----------------------------------------------------------
-void CStereoSLAMKF::create( const CObservationStereoImagesPtr & stImgs, const TStereoSLAMOptions & options )
+void CStereoSLAMKF::create( const CObservationStereoImagesPtr & stImgs, const TSRBAStereoSLAMOptions & options )
 {
     //  :: detect features
     //      -- fills the inner data structures (keypoints and descriptors)
@@ -53,7 +53,6 @@ void CStereoSLAMKF::create( const CObservationStereoImagesPtr & stImgs, const TS
     //      -- fills the inner data structures (matches)
     this->m_match_features( options );
 } // end-create
-
 // ----------------------------------------------------------
 // performDataAssociation
 // ----------------------------------------------------------
@@ -63,7 +62,7 @@ void CStereoSLAMKF::performDataAssociation(
 							rso::CStereoOdometryEstimator		& voEngine,					// INPUT
 							TVectorKfsDaInfo					& out_da,					// OUTPUT
 							const TStereoCamera					& stereo_camera,			// oINPUT
-							const TStereoSLAMOptions			& stSLAMOpts,				// oINPUT
+							const TSRBAStereoSLAMOptions			& stSLAMOpts,				// oINPUT
 							const CPose3DRotVec					& odomPoseFromLastKF )		// oINPUT
 {
 	out_da.clear();
@@ -71,14 +70,14 @@ void CStereoSLAMKF::performDataAssociation(
 
 	//	:: preliminary : prepare input from THIS KF (this is common for all the KF to test)
 	const size_t num_matches = this->m_matches.size();
-	cv::Mat curLDesc( num_matches,32, this->m_keyDescLeft.type() );
-	cv::Mat curRDesc( num_matches,32, this->m_keyDescRight.type() );
+	cv::Mat curLDesc( num_matches,32, this->m_descriptors_left.type() );
+	cv::Mat curRDesc( num_matches,32, this->m_descriptors_right.type() );
 
 	for(size_t k = 0; k < num_matches; ++k)
 	{
 		// create matrixes with the proper descriptors: curLDesc and curRDesc
-		this->m_keyDescLeft.row( this->m_matches[k].queryIdx ).copyTo( curLDesc.row(k) );
-		this->m_keyDescRight.row( this->m_matches[k].trainIdx ).copyTo( curRDesc.row(k) );
+		this->m_descriptors_left.row( this->m_matches[k].queryIdx ).copyTo( curLDesc.row(k) );
+		this->m_descriptors_right.row( this->m_matches[k].trainIdx ).copyTo( curRDesc.row(k) );
 	}
 	// --------------------------------------------------------------------------
 
@@ -88,12 +87,12 @@ void CStereoSLAMKF::performDataAssociation(
 	int k = 0;
 	for( vector<TKeyFrameID>::const_iterator it = lc_info.similar_kfs.begin(); it != lc_info.similar_kfs.end(); ++it, ++k )
 	{
-		VERBOSE_LEVEL(1) << "	DA with KF #" << keyframes[*it].m_kfID << endl;
+		VERBOSE_LEVEL(1) << "	DA with KF #" << keyframes[*it].m_kf_ID << endl;
 
 		// insert (if possible) the relative position of this KF wrt the previous one
 		// only for the previous one:
 		CPose3DRotVec initialPose;
-		if( keyframes[*it].m_kfID == this->m_kfID-1 ) // only for the previous one
+		if( keyframes[*it].m_kf_ID == this->m_kf_ID-1 ) // only for the previous one
 		{
 			initialPose = odomPoseFromLastKF;
 			VERBOSE_LEVEL(2) << "		:: Pose estimated by visual odometry: " << initialPose << endl;
@@ -159,7 +158,7 @@ void CStereoSLAMKF::internal_performDataAssociation(
 							rso::CStereoOdometryEstimator		& voEngine,					// INPUT  -- The visual odometry engine to compute the change in pose
 							rso::CStereoOdometryEstimator::TStereoOdometryResult & stOdomResult, 
 							const TStereoCamera					& stereo_camera,			// oINPUT -- Stereo camera parameters
-							const TStereoSLAMOptions			& stSLAMOpts,				// oINPUT -- Stereo SLAM options
+							const TSRBAStereoSLAMOptions			& stSLAMOpts,				// oINPUT -- Stereo SLAM options
 							const CPose3DRotVec					& kf_ini_rel_pose )			// oINPUT -- Initial estimation of the relative pose between this KF and the other one
 {
 	const size_t this_num_matches  = this->m_matches.size();
@@ -168,19 +167,19 @@ void CStereoSLAMKF::internal_performDataAssociation(
 	bool invalid = false;
 
 	//	:: prepare output
-	out_da.kf_idx = other_kf.m_kfID;
+	out_da.kf_idx = other_kf.m_kf_ID;
 	out_da.tracked_matches = 0;
 	out_da.tracking_info.resize( this_num_matches, make_pair(INVALID_IDX,0.0f) );
 
 	//	:: preliminary : prepare input from the OTHER KF
-	cv::Mat preLDesc( other_num_matches, 32, other_kf.m_keyDescLeft.type() );
-	cv::Mat preRDesc( other_num_matches, 32, other_kf.m_keyDescRight.type() );
+	cv::Mat preLDesc( other_num_matches, 32, other_kf.m_descriptors_left.type() );
+	cv::Mat preRDesc( other_num_matches, 32, other_kf.m_descriptors_right.type() );
 	
 	for(size_t k = 0; k < other_num_matches; ++k)
 	{
 		// create matrixes with the proper descriptors: preLDesc and preRDesc
-		other_kf.m_keyDescLeft.row(  other_kf.m_matches[k].queryIdx ).copyTo( preLDesc.row(k) );
-		other_kf.m_keyDescRight.row( other_kf.m_matches[k].trainIdx ).copyTo( preRDesc.row(k) );
+		other_kf.m_descriptors_left.row(  other_kf.m_matches[k].queryIdx ).copyTo( preLDesc.row(k) );
+		other_kf.m_descriptors_right.row( other_kf.m_matches[k].trainIdx ).copyTo( preRDesc.row(k) );
 	}
 	
 	//	:: create the matcher (bruteforce with Hamming distance)
@@ -191,9 +190,9 @@ void CStereoSLAMKF::internal_performDataAssociation(
 	matcher.match( curLDesc /*query*/, preLDesc /*train*/, matL /* size of curLDesc */);
 	matcher.match( curRDesc /*query*/, preRDesc /*train*/, matR /* size of curRDesc */);
 	
-	if( app_options.debug )
+	if( general_options.debug )
 	{
-		FILE *f = mrpt::system::os::fopen( GENERATE_NAME_WITH_2KF(if_match,other_kf.m_kfID) ,"wt");
+		FILE *f = mrpt::system::os::fopen( GENERATE_NAME_WITH_2KF(if_match,other_kf.m_kf_ID) ,"wt");
 		for( vector<DMatch>::iterator it = matL.begin(); it != matL.end(); ++it )
 		{
 			const size_t idxL = this->m_matches[it->queryIdx].queryIdx;
@@ -201,8 +200,8 @@ void CStereoSLAMKF::internal_performDataAssociation(
 
 			// plu, plv, clu, clv, orb_dist
 			mrpt::system::os::fprintf(f,"%.2f %.2f %.2f %.2f %.2f\n", 
-				other_kf.m_keyPointsLeft[idxR].pt.x, other_kf.m_keyPointsLeft[idxR].pt.y,
-				this->m_keyPointsLeft[idxL].pt.x, this->m_keyPointsLeft[idxL].pt.y,
+				other_kf.m_keypoints_left[idxR].pt.x, other_kf.m_keypoints_left[idxR].pt.y,
+				this->m_keypoints_left[idxL].pt.x, this->m_keypoints_left[idxL].pt.y,
 				it->distance);
 		}
 		mrpt::system::os::fclose(f);
@@ -230,22 +229,22 @@ void CStereoSLAMKF::internal_performDataAssociation(
 		++stage1_counter;
 	} // end-for
 
-	VERBOSE_LEVEL(2) << "[iDA " << this->m_kfID << "->" << other_kf.m_kfID << "]: Stage 1 Tracked feats: " << stage1_counter << "/" << matL.size() <<  endl;
+	VERBOSE_LEVEL(2) << "[iDA " << this->m_kf_ID << "->" << other_kf.m_kf_ID << "]: Stage 1 Tracked feats: " << stage1_counter << "/" << matL.size() <<  endl;
 
 	// DEBUG -----------------------------------------------------------
-	if( app_options.debug )
+	if( general_options.debug )
 	{	//	:: save first stage tracking
-		FILE *f1 = os::fopen( GENERATE_NAME_WITH_2KF( cand_stage1_other_tracked, other_kf.m_kfID ), "wt" );
+		FILE *f1 = os::fopen( GENERATE_NAME_WITH_2KF( cand_stage1_other_tracked, other_kf.m_kf_ID ), "wt" );
 		for( size_t m = 0; m < other_matched.size(); ++m )
 			os::fprintf( f1, "%d\n", other_matched[m].first );
 		os::fclose(f1);
 
-		FILE *f2 = os::fopen( GENERATE_NAME_WITH_2KF( cand_stage1_this_tracked, other_kf.m_kfID ), "wt" );
+		FILE *f2 = os::fopen( GENERATE_NAME_WITH_2KF( cand_stage1_this_tracked, other_kf.m_kf_ID ), "wt" );
 		for( size_t m = 0; m < this_matched.size(); ++m )
 			os::fprintf( f2, "%d\n", this_matched[m] );
 		os::fclose(f2);
 
-		FILE *f3 = os::fopen( GENERATE_NAME_WITH_2KF( stage1_tracked, other_kf.m_kfID ), "wt" );
+		FILE *f3 = os::fopen( GENERATE_NAME_WITH_2KF( stage1_tracked, other_kf.m_kf_ID ), "wt" );
 		os::fprintf( f3, "%% THIS_KF_ID THIS_IDX THIS_ID THIS_UL THIS_VL THIS_UR THIS_VR OTHER_KF_ID OTHER_IDX OTHER_ID OTHER_UL OTHER_VL OTHER_UR OTHER_VR\n" );
 		for( size_t m = 0; m < other_matched.size(); ++m )
 		{
@@ -254,21 +253,21 @@ void CStereoSLAMKF::internal_performDataAssociation(
 			// this
 			const size_t tm_idx = other_matched[m].first;
 			const size_t tm_id  = this->m_matches_ID[tm_idx];
-			const cv::KeyPoint & tlkp = this->m_keyPointsLeft[this->m_matches[tm_idx].queryIdx];
-			const cv::KeyPoint & trkp = this->m_keyPointsRight[this->m_matches[tm_idx].trainIdx];
+			const cv::KeyPoint & tlkp = this->m_keypoints_left[this->m_matches[tm_idx].queryIdx];
+			const cv::KeyPoint & trkp = this->m_keypoints_right[this->m_matches[tm_idx].trainIdx];
 
 			// other
 			const size_t om_idx = m;
 			const size_t om_id  = other_kf.m_matches_ID[om_idx];
-			const cv::KeyPoint & olkp = other_kf.m_keyPointsLeft[other_kf.m_matches[om_idx].queryIdx];
-			const cv::KeyPoint & orkp = other_kf.m_keyPointsRight[other_kf.m_matches[om_idx].trainIdx];
+			const cv::KeyPoint & olkp = other_kf.m_keypoints_left[other_kf.m_matches[om_idx].queryIdx];
+			const cv::KeyPoint & orkp = other_kf.m_keypoints_right[other_kf.m_matches[om_idx].trainIdx];
 
 			// dist
 			const double dist = other_matched[m].second;
 
 			os::fprintf( f3, "%d %d %d %.2f %.2f %.2f %.2f %d %d %d %.2f %.2f %.2f %.2f %.2f\n",
-				this->m_kfID, tm_idx, tm_id, tlkp.pt.x, tlkp.pt.y, trkp.pt.x, trkp.pt.y,
-				other_kf.m_kfID, om_idx, om_id, olkp.pt.x, olkp.pt.y, orkp.pt.x, orkp.pt.y,
+				this->m_kf_ID, tm_idx, tm_id, tlkp.pt.x, tlkp.pt.y, trkp.pt.x, trkp.pt.y,
+				other_kf.m_kf_ID, om_idx, om_id, olkp.pt.x, olkp.pt.y, orkp.pt.x, orkp.pt.y,
 				dist );
 		}
 		os::fclose(f3);
@@ -277,12 +276,12 @@ void CStereoSLAMKF::internal_performDataAssociation(
 
 	size_t outliers_stage2 = 0;
 	//	:: STAGE 2 --> either use a fundamental matrix or the minimization residual to remove outliers
-	if( stSLAMOpts.da_stage2_method == TStereoSLAMOptions::ST2M_FUNDMATRIX ||
-		stSLAMOpts.da_stage2_method == TStereoSLAMOptions::ST2M_BOTH )
+	if( stSLAMOpts.da_stage2_method == TSRBAStereoSLAMOptions::ST2M_FUNDMATRIX ||
+		stSLAMOpts.da_stage2_method == TSRBAStereoSLAMOptions::ST2M_BOTH )
 	{
 		if( stage1_counter < 15 )
 		{
-			VERBOSE_LEVEL(2) << "[iDA " << this->m_kfID << "->" << other_kf.m_kfID << "]: Stage 2 (F) Not enough input data." << endl;
+			VERBOSE_LEVEL(2) << "[iDA " << this->m_kf_ID << "->" << other_kf.m_kf_ID << "]: Stage 2 (F) Not enough input data." << endl;
 			invalid = true;
 		}
 		else
@@ -299,7 +298,7 @@ void CStereoSLAMKF::internal_performDataAssociation(
 				stSLAMOpts );
 
 			FILE *f = NULL;
-			if( app_options.debug ) f = os::fopen( GENERATE_NAME_WITH_2KF( fundmat_outliers, other_kf.m_kfID ), "wt" );
+			if( general_options.debug ) f = os::fopen( GENERATE_NAME_WITH_2KF( fundmat_outliers, other_kf.m_kf_ID ), "wt" );
 			// remove outliers from the fundamental matrix
 			// delete from 'other_matched'
 			for( size_t k = 0; k < outliers.size(); ++k )
@@ -311,18 +310,18 @@ void CStereoSLAMKF::internal_performDataAssociation(
 
 			outliers_stage2 = outliers.size();
 
-			VERBOSE_LEVEL(2) << "[iDA " << this->m_kfID << "->" << other_kf.m_kfID << "]: Stage 2 (F) Outliers detected: " << outliers_stage2 << endl;
+			VERBOSE_LEVEL(2) << "[iDA " << this->m_kf_ID << "->" << other_kf.m_kf_ID << "]: Stage 2 (F) Outliers detected: " << outliers_stage2 << endl;
 		}
 	}
 
-	if( stSLAMOpts.da_stage2_method == TStereoSLAMOptions::ST2M_CHANGEPOSE ||
-		stSLAMOpts.da_stage2_method == TStereoSLAMOptions::ST2M_BOTH )
+	if( stSLAMOpts.da_stage2_method == TSRBAStereoSLAMOptions::ST2M_CHANGEPOSE ||
+		stSLAMOpts.da_stage2_method == TSRBAStereoSLAMOptions::ST2M_BOTH )
 	{
 		ASSERT_( stage1_counter >= outliers_stage2 )
 
 		if( stage1_counter - outliers_stage2 < 15 )
 		{
-			VERBOSE_LEVEL(2) << "[iDA " << this->m_kfID << "->" << other_kf.m_kfID << "]: Stage 2 (CP) Not enough input data." << endl;
+			VERBOSE_LEVEL(2) << "[iDA " << this->m_kf_ID << "->" << other_kf.m_kf_ID << "]: Stage 2 (CP) Not enough input data." << endl;
 			invalid = true;
 		}
 		else
@@ -343,7 +342,7 @@ void CStereoSLAMKF::internal_performDataAssociation(
 				kf_ini_rel_pose );
 
 			FILE *f = NULL;
-			if( app_options.debug ) f = os::fopen( GENERATE_NAME_WITH_2KF( changepose_outliers, other_kf.m_kfID ), "wt" );
+			if( general_options.debug ) f = os::fopen( GENERATE_NAME_WITH_2KF( changepose_outliers, other_kf.m_kf_ID ), "wt" );
 			// remove outliers from the fundamental matrix
 			// delete from 'other_matched'
 			for( size_t k = 0; k < outliers.size(); ++k )
@@ -353,7 +352,7 @@ void CStereoSLAMKF::internal_performDataAssociation(
 			}
 			if(f) os::fclose(f);
 
-			VERBOSE_LEVEL(2) << "[iDA " << this->m_kfID << "->" << other_kf.m_kfID << "]: Stage 2 (CP) Outliers detected: " << outliers.size() << endl;
+			VERBOSE_LEVEL(2) << "[iDA " << this->m_kf_ID << "->" << other_kf.m_kf_ID << "]: Stage 2 (CP) Outliers detected: " << outliers.size() << endl;
 
 			outliers_stage2 += outliers.size();
 		}
@@ -361,8 +360,8 @@ void CStereoSLAMKF::internal_performDataAssociation(
 
 	// DEBUG ------------------------------------------------
 	FILE *f2 = NULL;
-	if( app_options.debug )
-		f2 = mrpt::system::os::fopen( GENERATE_NAME_WITH_2KF(if_match_after, other_kf.m_kfID) ,"wt");
+	if( general_options.debug )
+		f2 = mrpt::system::os::fopen( GENERATE_NAME_WITH_2KF(if_match_after, other_kf.m_kf_ID) ,"wt");
 	// ------------------------------------------------------
 
 	if( !invalid )
@@ -376,15 +375,15 @@ void CStereoSLAMKF::internal_performDataAssociation(
 				++out_da.tracked_matches;
 
 				// DEBUG ------------------------------------------------
-				if( app_options.debug )
+				if( general_options.debug )
 				{
 					const size_t idxL = this->m_matches[other_matched[k].first].queryIdx;
 					const size_t idxR = other_kf.m_matches[int(k)].queryIdx;
 
-					const double lu = this->m_keyPointsLeft[idxL].pt.x;
-					const double lv = this->m_keyPointsLeft[idxL].pt.y;
-					const double ru = other_kf.m_keyPointsLeft[idxR].pt.x;
-					const double rv = other_kf.m_keyPointsLeft[idxR].pt.y;
+					const double lu = this->m_keypoints_left[idxL].pt.x;
+					const double lv = this->m_keypoints_left[idxL].pt.y;
+					const double ru = other_kf.m_keypoints_left[idxR].pt.x;
+					const double rv = other_kf.m_keypoints_left[idxR].pt.y;
 
 					mrpt::system::os::fprintf(f2,"%.2f %.2f %.2f %.2f %.2f %.2f\n", lu, lv, ru, rv, other_matched[k].second, stOdomResult.out_residual[k]);
 				}
@@ -393,10 +392,10 @@ void CStereoSLAMKF::internal_performDataAssociation(
 		} // end-for
 	} // end-if
 
-	VERBOSE_LEVEL(2) << "[iDA " << this->m_kfID << "->" << other_kf.m_kfID << "]: Total tracked feats: " << out_da.tracked_matches << "/" << matL.size() << endl;
+	VERBOSE_LEVEL(2) << "[iDA " << this->m_kf_ID << "->" << other_kf.m_kf_ID << "]: Total tracked feats: " << out_da.tracked_matches << "/" << matL.size() << endl;
 
 	// DEBUG ------------------------------------------------
-	if( app_options.debug )
+	if( general_options.debug )
 		mrpt::system::os::fclose(f2);
 	// ------------------------------------------------------
 
@@ -410,7 +409,7 @@ void CStereoSLAMKF::m_detect_outliers_with_change_in_pose (
 				vector<size_t>						& outliers /*output*/,
 				rso::CStereoOdometryEstimator::TStereoOdometryResult & result, /*output*/
 				const TStereoCamera					& stereo_camera,
-				const TStereoSLAMOptions			& stSLAMOpts,
+				const TSRBAStereoSLAMOptions			& stSLAMOpts,
 				const CPose3DRotVec					& kf_ini_rel_pose ) /*vector<double>*/
 {
 	// prepare output
@@ -439,7 +438,7 @@ void CStereoSLAMKF::m_detect_outliers_with_change_in_pose (
 	const bool valid = voEngine.getChangeInPose(
 			tracked_pairs,																						// the tracked pairs
 			other_kf.m_matches, this->m_matches,																// pre_matches, cur_matches,
-			other_kf.m_keyPointsLeft, other_kf.m_keyPointsRight, this->m_keyPointsLeft, this->m_keyPointsRight, // pre_left_feats, pre_right_feats, cur_left_feats, cur_right_feats,
+			other_kf.m_keypoints_left, other_kf.m_keypoints_right, this->m_keypoints_left, this->m_keypoints_right, // pre_left_feats, pre_right_feats, cur_left_feats, cur_right_feats,
 			stereo_camera,
 			result,					// output
 			initialPoseVector );	// [w1,w2,w3,tx,ty,tz]
@@ -452,7 +451,7 @@ void CStereoSLAMKF::m_detect_outliers_with_change_in_pose (
 	if( !result.valid )
 	{
 		VERBOSE_LEVEL(1) << "	WARNING: Change in pose could not be estimated, skipping this test." << endl;
-		if( app_options.debug ) 
+		if( general_options.debug ) 
 		{
 			// empty file
 			FILE *f = os::fopen( GENERATE_NAME_WITH_KF( posechange_outliers ), "wt" );
@@ -462,7 +461,7 @@ void CStereoSLAMKF::m_detect_outliers_with_change_in_pose (
 
 	// remove large outliers
 	FILE *f = NULL;
-	if( app_options.debug ) f = os::fopen( GENERATE_NAME_WITH_KF( posechange_outliers ), "wt" );
+	if( general_options.debug ) f = os::fopen( GENERATE_NAME_WITH_KF( posechange_outliers ), "wt" );
 	for( size_t k = 0; k < result.out_residual.size(); ++k )
 	{
 		if( result.out_residual[k] > stSLAMOpts.residual_th )
@@ -497,7 +496,7 @@ void CStereoSLAMKF::m_detect_outliers_with_F (
 				const CStereoSLAMKF					& this_kf,
 				const CStereoSLAMKF					& other_kf,
 				vector<size_t>						& outliers /*output*/,
-				const TStereoSLAMOptions			& stSLAMOpts )
+				const TSRBAStereoSLAMOptions			& stSLAMOpts )
 {
 	// prepare output
 	outliers.clear(); outliers.reserve( other_matched.size() );
@@ -520,17 +519,17 @@ void CStereoSLAMKF::m_detect_outliers_with_F (
 		const size_t curIdxL	= this_kf.m_matches[other_matched[idx].first].queryIdx;
 		const size_t curIdxR	= this_kf.m_matches[other_matched[idx].first].trainIdx;
 
-        ppl.at<float>(k,0) = static_cast<float>(other_kf.m_keyPointsLeft[preIdxL].pt.x);
-        ppl.at<float>(k,1) = static_cast<float>(other_kf.m_keyPointsLeft[preIdxL].pt.y);
+        ppl.at<float>(k,0) = static_cast<float>(other_kf.m_keypoints_left[preIdxL].pt.x);
+        ppl.at<float>(k,1) = static_cast<float>(other_kf.m_keypoints_left[preIdxL].pt.y);
 
-		ppr.at<float>(k,0) = static_cast<float>(other_kf.m_keyPointsRight[preIdxR].pt.x);
-        ppr.at<float>(k,1) = static_cast<float>(other_kf.m_keyPointsRight[preIdxR].pt.y);
+		ppr.at<float>(k,0) = static_cast<float>(other_kf.m_keypoints_right[preIdxR].pt.x);
+        ppr.at<float>(k,1) = static_cast<float>(other_kf.m_keypoints_right[preIdxR].pt.y);
 
-		pcl.at<float>(k,0) = static_cast<float>(this_kf.m_keyPointsLeft[curIdxL].pt.x);
-        pcl.at<float>(k,1) = static_cast<float>(this_kf.m_keyPointsLeft[curIdxL].pt.y);
+		pcl.at<float>(k,0) = static_cast<float>(this_kf.m_keypoints_left[curIdxL].pt.x);
+        pcl.at<float>(k,1) = static_cast<float>(this_kf.m_keypoints_left[curIdxL].pt.y);
 
-		pcr.at<float>(k,0) = static_cast<float>(this_kf.m_keyPointsRight[curIdxR].pt.x);
-        pcr.at<float>(k,1) = static_cast<float>(this_kf.m_keyPointsRight[curIdxR].pt.y);
+		pcr.at<float>(k,0) = static_cast<float>(this_kf.m_keypoints_right[curIdxR].pt.x);
+        pcr.at<float>(k,1) = static_cast<float>(this_kf.m_keypoints_right[curIdxR].pt.y);
 	}
 
 	vector<uchar> left_inliers, right_inliers;
@@ -542,18 +541,19 @@ void CStereoSLAMKF::m_detect_outliers_with_F (
 			outliers.push_back(tracked_idx[k]);
 	}
 } // end-m_detect_outliers_with_F
+#endif
 
 // ----------------------------------------------------------
 // dumpToConsole
 // ----------------------------------------------------------
 void CStereoSLAMKF::dumpToConsole()
 {
-    cout << "KEYFRAME [" << this->m_kfID << "]" << endl
+    cout << "KEYFRAME [" << this->m_kf_ID << "]" << endl
          << "---------------------------------------------" << endl
-         << "   :: Camera pose = " << this->m_camPose << endl
+         << "   :: Camera pose = " << this->m_camera_pose << endl
          << "   :: Matches [" << this->m_matches.size() << " out of "
-         << this->m_keyPointsLeft.size() << "/"
-         << this->m_keyPointsRight.size() << "]: ID: left_kp_x,left_kp_y --> right_kp_x,right_kp_y" << endl
+         << this->m_keypoints_left.size() << "/"
+         << this->m_keypoints_right.size() << "]: ID: left_kp_x,left_kp_y --> right_kp_x,right_kp_y" << endl
          << "   -------------------------------------"
          << endl;
 
@@ -564,10 +564,10 @@ void CStereoSLAMKF::dumpToConsole()
 
         cout << "   "
              << m_matches_ID[k] << ": "
-             << m_keyPointsLeft[id1].pt.x << ","
-             << m_keyPointsLeft[id1].pt.y << " --> "
-             << m_keyPointsRight[id2].pt.x << ","
-             << m_keyPointsRight[id2].pt.y
+             << m_keypoints_left[id1].pt.x << ","
+             << m_keypoints_left[id1].pt.y << " --> "
+             << m_keypoints_right[id2].pt.x << ","
+             << m_keypoints_right[id2].pt.y
              << endl;
     } // end-for
     cout << "++++++++++++++++++++++++++++++++++++++++++++++" << endl;
@@ -579,15 +579,15 @@ void CStereoSLAMKF::dumpToConsole()
 void CStereoSLAMKF::saveInfoToFiles( const string & str_modif )
 {
 	// prepare output directory
-	if( !mrpt::system::directoryExists( app_options.out_dir ) )
-		mrpt::system::createDirectory( app_options.out_dir );
+	if( !mrpt::system::directoryExists( general_options.out_dir ) )
+		mrpt::system::createDirectory( general_options.out_dir );
 
 	// information
 	string my_filename;
 	if( str_modif.empty() )
-		my_filename = mrpt::format("%s\\info_kf%04d.txt", app_options.out_dir.c_str(), this->m_kfID);
+		my_filename = mrpt::format("%s\\info_kf%04d.txt", general_options.out_dir.c_str(), this->m_kf_ID);
 	else
-		my_filename = mrpt::format("%s\\%s_info_kf%04d.txt", app_options.out_dir.c_str(), str_modif.c_str(), this->m_kfID);
+		my_filename = mrpt::format("%s\\%s_info_kf%04d.txt", general_options.out_dir.c_str(), str_modif.c_str(), this->m_kf_ID);
 
 	FILE *f = mrpt::system::os::fopen( my_filename, "wt");
 	if( !f )
@@ -599,10 +599,10 @@ void CStereoSLAMKF::saveInfoToFiles( const string & str_modif )
 	const size_t n_matches_id_size = this->m_matches_ID.size();
 	for( it = this->m_matches.begin(); it != this->m_matches.end(); ++it, ++m_count )
 	{
-		const cv::KeyPoint & lkp = this->m_keyPointsLeft[it->queryIdx];
-		const cv::KeyPoint & rkp = this->m_keyPointsRight[it->trainIdx];
+		const cv::KeyPoint & lkp = this->m_keypoints_left[it->queryIdx];
+		const cv::KeyPoint & rkp = this->m_keypoints_right[it->trainIdx];
 		mrpt::system::os::fprintf( f,"%d %d %.2f %.2f %.2f %.2f %.2f\n",
-			this->m_kfID,
+			this->m_kf_ID,
 			n_matches_id_size > 0 ? this->m_matches_ID[m_count] : 0,
 			lkp.pt.x, lkp.pt.y,
 			rkp.pt.x, rkp.pt.y,
@@ -611,46 +611,27 @@ void CStereoSLAMKF::saveInfoToFiles( const string & str_modif )
 	mrpt::system::os::fclose(f);
 
 	if( str_modif.empty() )
-		my_filename = mrpt::format("%s\\info_feats_kf%04d.txt", app_options.out_dir.c_str(), this->m_kfID);
+		my_filename = mrpt::format("%s\\info_feats_kf%04d.txt", general_options.out_dir.c_str(), this->m_kf_ID);
 	else
-		my_filename = mrpt::format("%s\\%s_info_feats_kf%04d.txt", app_options.out_dir.c_str(), str_modif.c_str(), this->m_kfID);
+		my_filename = mrpt::format("%s\\%s_info_feats_kf%04d.txt", general_options.out_dir.c_str(), str_modif.c_str(), this->m_kf_ID);
 
 	f = mrpt::system::os::fopen( my_filename, "wt");
 	if( !f )
 		THROW_EXCEPTION( mrpt::format("Output file %s could not be opened", my_filename.c_str()) );
 
-	mrpt::system::os::fprintf( f, "%d %d\n", this->m_keyPointsLeft.size(), this->m_keyPointsRight.size() );
-	for( vector<cv::KeyPoint>::iterator it = this->m_keyPointsLeft.begin(); it != this->m_keyPointsLeft.end(); ++it )
+	mrpt::system::os::fprintf( f, "%d %d\n", this->m_keypoints_left.size(), this->m_keypoints_right.size() );
+	for( vector<cv::KeyPoint>::iterator it = this->m_keypoints_left.begin(); it != this->m_keypoints_left.end(); ++it )
 		mrpt::system::os::fprintf( f, "%.2f %.2f\n", it->pt.x, it->pt.y );
-	for( vector<cv::KeyPoint>::iterator it = this->m_keyPointsRight.begin(); it != this->m_keyPointsRight.end(); ++it )
+	for( vector<cv::KeyPoint>::iterator it = this->m_keypoints_right.begin(); it != this->m_keypoints_right.end(); ++it )
 		mrpt::system::os::fprintf( f, "%.2f %.2f\n", it->pt.x, it->pt.y );
 
 	mrpt::system::os::fclose(f);
 } // end saveInfoToFiles
-
-// ----------------------------------------------------------
-// m_change_structure_binary
-// ----------------------------------------------------------
-void CStereoSLAMKF::m_change_structure_binary( const Mat & plain, vector<BRIEF::bitset> & out )
-{
-	out.resize( plain.rows );
-	for( unsigned int i = 0; i < static_cast<unsigned int>(plain.rows); i ++ )
-	{
-		// for each descriptor
-		out[i].resize( plain.cols*8 );						// number of bits (256)
-		for( unsigned int k = 0; k < static_cast<unsigned int>(plain.cols); ++k )
-		{
-			const uint8_t val = plain.at<uint8_t>(i,k);
-			for(unsigned int m = 0; m < 8; ++m)
-				out[i][m+k*8] = (val >> m) & 1;
-		}
-	}
-} // end-changeStructureORB
-
+#if 0
 // ----------------------------------------------------------
 // m_detect_features
 // ----------------------------------------------------------
-void CStereoSLAMKF::m_detect_features( const CObservationStereoImagesPtr & stImgs, const TStereoSLAMOptions & stSLAMOpts )
+void CStereoSLAMKF::m_detect_features( const CObservationStereoImagesPtr & stImgs, const TSRBAStereoSLAMOptions & stSLAMOpts )
 {
     //  :: detect ORB features --> consider multi-thread
     Mat cvInputLeftImage( stImgs->imageLeft.getAs<IplImage>() );
@@ -668,7 +649,7 @@ void CStereoSLAMKF::m_detect_features( const CObservationStereoImagesPtr & stImg
 	// Other approach: FAST + BRIEF (to be considered)
 	Mat auxML, auxMR;
 	vector<KeyPoint> kpL, kpR;
-	if( stSLAMOpts.detect_method == TStereoSLAMOptions::DM_FAST_ORB )
+	if( stSLAMOpts.detect_method == TSRBAStereoSLAMOptions::DM_FAST_ORB )
 	{
 		// opencv's fast detector + orb descriptor
 		// cons: no multiscale
@@ -681,7 +662,7 @@ void CStereoSLAMKF::m_detect_features( const CObservationStereoImagesPtr & stImg
 		orb_detector( cvInputLeftImage, Mat(), kpL, auxML, true );
 		orb_detector( cvInputRightImage, Mat(), kpR, auxMR, true );
 	}
-	else if( stSLAMOpts.detect_method == TStereoSLAMOptions::DM_ORB_ONLY )
+	else if( stSLAMOpts.detect_method == TSRBAStereoSLAMOptions::DM_ORB_ONLY )
 	{
 		// opencv's orb detector:
 		// cons: fixed FAST threshold of 20 --> there is some control on the number of features detected
@@ -692,7 +673,7 @@ void CStereoSLAMKF::m_detect_features( const CObservationStereoImagesPtr & stImg
 
 	if( stSLAMOpts.non_maximal_suppression )
 	{
-		if( app_options.debug )
+		if( general_options.debug )
 		{
 			cout << "initial points = " << kpL.size() << endl;
 			// save to file before
@@ -702,43 +683,43 @@ void CStereoSLAMKF::m_detect_features( const CObservationStereoImagesPtr & stImg
 			fclose(f1);
 		}
 
-		m_adaptive_non_max_suppression( stSLAMOpts.n_feats, kpL, auxML, this->m_keyPointsLeft, this->m_keyDescLeft );
-		m_adaptive_non_max_suppression( stSLAMOpts.n_feats, kpR, auxMR, this->m_keyPointsRight, this->m_keyDescRight );
+		m_adaptive_non_max_suppression( stSLAMOpts.n_feats, kpL, auxML, this->m_keypoints_left, this->m_descriptors_left );
+		m_adaptive_non_max_suppression( stSLAMOpts.n_feats, kpR, auxMR, this->m_keypoints_right, this->m_descriptors_right );
 
-		if( app_options.debug )
+		if( general_options.debug )
 		{
 			FILE *f2 = fopen("after_non_max_supp.txt","wt");
-			for( size_t k = 0; k < this->m_keyPointsLeft.size(); ++k )
-				fprintf(f2, "%.2f %.2f\n", this->m_keyPointsLeft[k].pt.x, this->m_keyPointsLeft[k].pt.y );
+			for( size_t k = 0; k < this->m_keypoints_left.size(); ++k )
+				fprintf(f2, "%.2f %.2f\n", this->m_keypoints_left[k].pt.x, this->m_keypoints_left[k].pt.y );
 			fclose(f2);
 		}
 	}
 	else
 	{
 		// just copy to inner structure
-		kpL.swap(this->m_keyPointsLeft);
-		kpR.swap(this->m_keyPointsRight);
+		kpL.swap(this->m_keypoints_left);
+		kpR.swap(this->m_keypoints_right);
 
 		// this should be fast!
-		this->m_keyDescLeft = auxML;
-		this->m_keyDescRight = auxMR;
+		this->m_descriptors_left = auxML;
+		this->m_descriptors_right = auxMR;
 	}
 } // end -- m_detect_features
 
 // ----------------------------------------------------------
 // m_match_features
 // ----------------------------------------------------------
-void CStereoSLAMKF::m_match_features( const TStereoSLAMOptions & stSLAMOpts )
+void CStereoSLAMKF::m_match_features( const TSRBAStereoSLAMOptions & stSLAMOpts )
 {
 	BFMatcher orb_matcher( NORM_HAMMING, false );
 
-	orb_matcher.match( this->m_keyDescLeft, this->m_keyDescRight, this->m_matches );
+	orb_matcher.match( this->m_descriptors_left, this->m_descriptors_right, this->m_matches );
 
 	// to do: remove the not matched descriptors
 	if( stSLAMOpts.matching_options.enable_robust_1to1_match )
 	{
 		// for each right feature: 'distance' and 'left idx'
-		const size_t right_size = this->m_keyPointsRight.size();
+		const size_t right_size = this->m_keypoints_right.size();
 		vector< pair< double, size_t > >  right_cand( right_size, make_pair(-1.0,0) );
 
 		// loop over the matches
@@ -770,8 +751,8 @@ void CStereoSLAMKF::m_match_features( const TStereoSLAMOptions & stSLAMOpts )
     vector<DMatch>::iterator itM = this->m_matches.begin();
     while(itM != this->m_matches.end())
     {
-        const int diff = this->m_keyPointsLeft[itM->queryIdx].pt.y-this->m_keyPointsRight[itM->trainIdx].pt.y;
-		const int disp = this->m_keyPointsLeft[itM->queryIdx].pt.x-this->m_keyPointsRight[itM->trainIdx].pt.x;
+        const int diff = this->m_keypoints_left[itM->queryIdx].pt.y-this->m_keypoints_right[itM->trainIdx].pt.y;
+		const int disp = this->m_keypoints_left[itM->queryIdx].pt.x-this->m_keypoints_right[itM->trainIdx].pt.x;
 
 		const bool c1 = stSLAMOpts.matching_options.useEpipolarRestriction ? std::abs(diff) <= stSLAMOpts.matching_options.epipolar_TH : true;
 		const bool c2 = stSLAMOpts.matching_options.useXRestriction ? disp > 0 : true;
@@ -783,7 +764,7 @@ void CStereoSLAMKF::m_match_features( const TStereoSLAMOptions & stSLAMOpts )
 		}
 		else
 		{
-			this->m_keyPointsLeft[itM->queryIdx].pt.y = this->m_keyPointsRight[itM->trainIdx].pt.y = .5f*(this->m_keyPointsLeft[itM->queryIdx].pt.y+this->m_keyPointsRight[itM->trainIdx].pt.y);
+			this->m_keypoints_left[itM->queryIdx].pt.y = this->m_keypoints_right[itM->trainIdx].pt.y = .5f*(this->m_keypoints_left[itM->queryIdx].pt.y+this->m_keypoints_right[itM->trainIdx].pt.y);
 			++itM;
 		}
     } // end-while
@@ -854,3 +835,4 @@ void CStereoSLAMKF::m_adaptive_non_max_suppression(
 		}
 	}
 } // end-m_adaptive_non_max_suppression
+#endif
