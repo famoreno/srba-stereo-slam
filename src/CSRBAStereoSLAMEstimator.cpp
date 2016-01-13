@@ -1121,8 +1121,7 @@ void CSRBAStereoSLAMEstimator::initialize( const CConfigFile & config )
 	paramSections.push_back("GENERAL");
 
     m_voEngine.loadParamsFromConfigFile(config, paramSections);
-	// m_voEngine.setVerbosityLevel( config.read_int("GENERAL","vo_verbosity",0,false) );
-	m_voEngine.setVerbosityLevel( general_options.verbose_level );
+	m_voEngine.setVerbosityLevel( general_options.verbose_level );	// set general verbose level
 
 	// force some visual odometry paremeters to those suitable for this application
     m_voEngine.params_detect.detect_method				= rso::CStereoOdometryEstimator::TDetectParams::dmORB;
@@ -1137,23 +1136,22 @@ void CSRBAStereoSLAMEstimator::initialize( const CConfigFile & config )
 	m_voEngine.dumpToConsole();
 	
 	// main member RBA
+	rba.setVerbosityLevel( general_options.verbose_level );	// set general verbose level
+	
 	rba.parameters.sensor.camera_calib.leftCamera       = srba_options.stereo_camera.leftCamera;
     rba.parameters.sensor.camera_calib.rightCamera      = srba_options.stereo_camera.rightCamera;
     rba.parameters.sensor.camera_calib.rightCameraPose  = srba_options.stereo_camera.rightCameraPose;
 	rba.parameters.sensor_pose.relative_pose			= image_pose_on_robot; 
 
-	rba.parameters.srba.max_tree_depth				= config.read_int("SRBA_GENERAL","srba_max_tree_depth",3,false);
-	rba.parameters.srba.max_optimize_depth			= config.read_int("SRBA_GENERAL","srba_max_optimize_depth",3,false);
-
-    // rba.setVerbosityLevel( config.read_int("SRBA_GENERAL","srba_verbosity", 0, false) );	// 0: None; 1:Important only; 2:Verbose
-	rba.setVerbosityLevel( general_options.verbose_level );	// 0: None; 1:Important only; 2:Verbose
-	rba.parameters.ecp.submap_size					= config.read_int("SRBA_GENERAL","srba_submap_size",15,false);
-	rba.parameters.obs_noise.std_noise_observations = 0.5;							// pixels
-	rba.parameters.srba.use_robust_kernel           = config.read_bool("SRBA_GENERAL","srba_use_robust_kernel",true,false);
-	rba.parameters.srba.use_robust_kernel_stage1    = config.read_bool("SRBA_GENERAL","srba_use_robust_kernel_stage1",true,false);
-	rba.parameters.srba.kernel_param				= config.read_double("SRBA_GENERAL","srba_kernel_param",3.0,false);
+	rba.parameters.srba.max_tree_depth					= srba_options.srba_max_tree_depth;
+	rba.parameters.srba.max_optimize_depth				= srba_options.srba_max_optimize_depth;
+	rba.parameters.ecp.submap_size						= srba_options.srba_submap_size;
+	rba.parameters.obs_noise.std_noise_observations		= 0.5; // pixels
+	rba.parameters.srba.use_robust_kernel				= srba_options.srba_use_robust_kernel;
+	rba.parameters.srba.use_robust_kernel_stage1		= srba_options.srba_use_robust_kernel_stage1;
+	rba.parameters.srba.kernel_param					= srba_options.srba_kernel_param;
 	
-	// set limits for checking new KF
+	// set limits for checking new KFs
 	m_max_rotation_limit = srba_options.max_rotation, m_max_translation_limit = srba_options.max_translation,
 	m_max_rotation = 2*m_max_rotation_limit, m_max_translation = 2*m_max_translation_limit;
 			

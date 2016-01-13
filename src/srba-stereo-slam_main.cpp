@@ -21,7 +21,7 @@ int main(int argc, char **argv)
 		CConfigFile config( INI_FILENAME );
 
 	    // get general parameters
-		general_options.loadFromConfigFile( config );											// general app options
+		general_options.loadFromConfigFile( config );							// general app options
 
 		// create srba estimator
 		CSRBAStereoSLAMEstimator srba_stereo_estimator;
