@@ -1748,14 +1748,14 @@ void CSRBAStereoSLAMEstimator::m_internal_data_association(
 
 } // end-internal_performDataAssociation
 
-/** /
- * Determines those KFs which are similar to this one according to the query DB results
+/**
+ * Determines those KFs which are similar to this one according to the query DB results.
  * Criteria -- a KF is considered similar if either:
  *	- it is the previous one
  *	- its score is over 80% of the maximum score -- 0.8*dbQueryResults[0].score
  *	- its score is over an absolute minimum (0.05) and it is far away from the current KF (potential loop closure)
  * Returns: potential loop closure detected (bool)
-/**/
+*/
 bool CSRBAStereoSLAMEstimator::m_get_similar_kfs( 
 		const TKeyFrameID			& newKfId,
 		const QueryResults			& dbQueryResults,
@@ -1763,11 +1763,11 @@ bool CSRBAStereoSLAMEstimator::m_get_similar_kfs(
 {
 	const size_t qSize = dbQueryResults.size();
 	if( qSize == 0 )
-		THROW_EXCEPTION( "Parameter 'dbQueryResults' contains no results. This method should not be called here." );
+		THROW_EXCEPTION( "Parameter 'dbQueryResults' is empty. This method should not be called here." );
 
 	VERBOSE_LEVEL(2) << "dbQueryResults: " << dbQueryResults << endl;
 
-	if( dbQueryResults[0].Score < 0.04 /* TODO: absoluteDbQueryThreshold */ )
+	if( dbQueryResults[0].Score < srba_options.query_score_th )
 	{
 		SHOW_WARNING( "Best result in 'dbQueryResults' is below a minimum threshold. Lost camera?" );
 	}
@@ -1782,7 +1782,7 @@ bool CSRBAStereoSLAMEstimator::m_get_similar_kfs(
 	if( qSize == 1 )	// we have already added the last one, set the pose (if needed) and we are done here
 	{
 		if( srba_options.da_stage2_method == TSRBAStereoSLAMOptions::ST2M_CHANGEPOSE ||
-		srba_options.da_stage2_method == TSRBAStereoSLAMOptions::ST2M_BOTH )
+			srba_options.da_stage2_method == TSRBAStereoSLAMOptions::ST2M_BOTH )
 		{
 			out.similar_kfs_poses.push_back(m_incr_pose_from_last_kf.getInverse());	// pose of previous KF (camera to camera) wrt this one
 		}

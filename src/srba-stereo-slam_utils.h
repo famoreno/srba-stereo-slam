@@ -208,17 +208,17 @@ typedef struct TSRBAStereoSLAMOptions
 	CPose3DRotVec			camera_pose_on_robot_rvt, 
 							camera_pose_on_robot_rvt_inverse;
     
-	TDetectMethod			detect_method;			//!< (def:ORB) Feature extraction method for SRBA system
+	TDetectMethod			detect_method;			//!< (def:ORB) -- Feature extraction method for SRBA system
 	
 	// detect
-    size_t	n_levels,								//!< (def:1) Number of levels in the image pyramid -- fixed by now
-			n_feats;								//!< (def:500) Desired number of feats to be detected in the images
+    size_t	n_levels,								//!< (def:1) -- Number of levels in the image pyramid -- fixed by now
+			n_feats;								//!< (def:500) -- Desired number of feats to be detected in the images
 	
 	int		min_ORB_distance,						//!< (def:0) For non-max-suppression
-			detect_fast_th,							//!< (def:5) For DM_FAST_ORB
-			adaptive_th_min_matches;				//!< (def:100) Minimum number of stereo matches to force adaptation of FAST and/or ORB thresholds.
+			detect_fast_th,							//!< (def:5) -- Initial FAST Threshold for ORB keypoints (will be adaptad if 'orb_adaptive_fast_th' is true)
+			adaptive_th_min_matches;				//!< (def:100) -- Minimum number of stereo matches to force adaptation of FAST and/or ORB thresholds.
 	
-	bool	orb_adaptive_fast_th;					//!< (def:false) For DM_ORB --> set if the FAST threshold (within ORB method) should be modified in order to get the desired number of feats
+	bool	orb_adaptive_fast_th;					//!< (def:false) -- Set/Unset adaptive FAST threshold (within ORB method) to get the desired number of feats
 	
 	TNonMaxSuppMethod non_max_supp_method;			//!< (def:standard) Method to perform nom maximal suppression
 
@@ -231,7 +231,7 @@ typedef struct TSRBAStereoSLAMOptions
 
 	// least-squares
 	TDAStage2Method da_stage2_method;				//!< (def:2) -- Method for filtering outliers during second stage of DA (after ORB matching): [0] None ; [1] Fundamental Matrix; [2] Change in pose only ; [3] Both
-	double			query_score_th;					//!< (def:0.2) -- 
+	double			query_score_th;					//!< (def:0.04) -- Minimum allowed query value for the most similar KF (will raise an error if it falls below this)
 
 	bool	use_initial_pose;						//!< (def:true) -- Use an initial estimation of the position of this KF taken from the odometry
 	int		vo_id_tracking_th;						//!< (def:40) -- Threshold for the number of tracked features from last KF
@@ -268,7 +268,7 @@ typedef struct TSRBAStereoSLAMOptions
 			max_y_diff_epipolar(1.5), 
 			max_orb_distance_da(60),
 			da_stage2_method( ST2M_CHANGEPOSE ), 
-			query_score_th(0.2),
+			query_score_th(0.04),
 			use_initial_pose(true),
 			vo_id_tracking_th(40), 
 			residual_th(50), 
@@ -357,6 +357,7 @@ typedef struct TSRBAStereoSLAMOptions
 		MRPT_LOAD_CONFIG_VAR(max_y_diff_epipolar,double,config,"SRBA_DATA_ASSOCIATION")	
 		MRPT_LOAD_CONFIG_VAR(ransac_fit_prob,double,config,"SRBA_DATA_ASSOCIATION")		
 		MRPT_LOAD_CONFIG_VAR(max_orb_distance_da,double,config,"SRBA_DATA_ASSOCIATION")	
+		MRPT_LOAD_CONFIG_VAR(query_score_th,double,config,"SRBA_DATA_ASSOCIATION")
 
 		// new kf creation
 		MRPT_LOAD_CONFIG_VAR(max_rotation,double,config,"SRBA_KF_CREATION")				
@@ -367,11 +368,11 @@ typedef struct TSRBAStereoSLAMOptions
 		MRPT_LOAD_CONFIG_VAR(lc_distance,int,config,"SRBA_KF_CREATION")					
 		MRPT_LOAD_CONFIG_VAR(vo_id_tracking_th,int,config,"SRBA_KF_CREATION")			
 		MRPT_LOAD_CONFIG_VAR(use_initial_pose,bool,config,"SRBA_KF_CREATION")
-
+		
 		// detect_method = config.read_int   ("SRBA","srba_detect_method",detect_method,false) == 0 ? DM_ORB_ONLY : DM_FAST_ORB;
 		// MRPT_LOAD_CONFIG_VAR(n_levels,int,config,"SRBA_DETECT")						// <- by now, will be 1 for only ORB
 		// MRPT_LOAD_CONFIG_VAR(non_maximal_suppression,bool,config,"DETECT")		// <- for visual odometry
-		// MRPT_LOAD_CONFIG_VAR(query_score_th,double,config,"LEAST_SQUARES")		// <- threshold for BoW query results LIKELY TO BE UNUSED
+		
 		// matching_options.loadFromConfigFile( config, "MATCH" );			// <- for stereo matching, LIKELY TO BE DELETED
 		// MRPT_LOAD_CONFIG_VAR(min_ORB_distance,int,config,"DETECT")		// UNUSED
 		// non_max_supp_method		= config.read_int   ("DETECT","non_max_supp_method",non_max_supp_method,false) == 0 ? NMSM_STANDARD : NMSM_ADAPTIVE;
@@ -384,38 +385,30 @@ typedef struct TSRBAStereoSLAMOptions
 		cout << "---------------------------------------------------------" << endl;
 		cout << " Stereo SLAM system with the following options" << endl;
 		cout << "---------------------------------------------------------" << endl;
-		cout << "	:: [General] Residual threshold: " << residual_th << endl;
-		cout << "	:: [General] Initial threshold for testing new KF: " << max_translation << " m. and " << max_rotation << " deg." << endl;
-		cout << "	:: [General] Residual threshold: " << residual_th << endl;
-		cout << "	:: [General] Update map when # of inter-frame (IF) matches is below: " << updated_matches_th << endl;
-		cout << "	:: [General] Adapt movement th. when # of IF matches is below: " << up_matches_th_plus+updated_matches_th << endl;
-		cout << "	:: [General] KF distance to consider a Loop Closure (LC): " << lc_distance << endl;
-
-		cout << "	:: [Detect]  Detection method: ";
-		detect_method == 0 ? cout << "ORB" : cout << "FAST+ORB"; cout << endl;
-		if( detect_method == 1 ) cout << "	:: [Detect]  FAST detection threshold: " << detect_fast_th << endl; 
-		cout << "	:: [Detect]  Number of ORB features: " << n_feats << endl;
-		cout << "	:: [Detect]  Number of ORB levels: " << n_levels << " levels." << endl;
-		DUMP_BOOL_VAR_TO_CONSOLE("	:: [Detect]  Use adaptive FAST threshold for ORB?: ", orb_adaptive_fast_th)
-		DUMP_BOOL_VAR_TO_CONSOLE("	:: [Detect]  Perform Non maximal Suppression (NMS)?: ", non_maximal_suppression)
-
-		if( non_maximal_suppression ) 
-		{
-			cout << "	:: [Detect]  NMS method: ";
-			non_max_supp_method == 0 ? cout << "Standard" : cout << "Adaptive"; cout << endl;
-			if( non_max_supp_method == 0 ) cout << "	:: [Detect]  Minimum distance between features: " << min_ORB_distance << endl;
-		}
 		
-		matching_options.dumpToConsole();
+		// General options
+		cout << " [General] " << endl;
+		cout << "	Max tree depth: " << srba_max_tree_depth << endl;
+		cout << "	Max optimization depth: " << srba_max_optimize_depth << endl;
+		cout << "	Submap size: " << srba_submap_size << endl;
+		DUMP_BOOL_VAR_TO_CONSOLE("	Use robust kernel in optimization (stage 1): ", srba_use_robust_kernel_stage1)
+		DUMP_BOOL_VAR_TO_CONSOLE("	Use robust kernel in optimization: ", srba_use_robust_kernel)
+		if( srba_use_robust_kernel_stage1 || srba_use_robust_kernel )
+		cout << "	Robust kernel parameter: " << srba_kernel_param << endl;
 
-		cout << endl;
-		cout << "	:: [Match]   Max feat dist to ep-line in inter-frame matching: " << max_y_diff_epipolar << " px." << endl;
-		cout << "	:: [Match]   Max distance between ORB desc for data association: " << max_orb_distance_da << endl;
-		cout << "	:: [Match]   Probability of RANSAC Fundamental Matrix fit: " << ransac_fit_prob << endl;
-		cout << "	:: [Match]	 Adaptive threshold matches limit: " << adaptive_th_min_matches << endl;
-		cout << endl;
-		cout << "	:: [LS]      Stage 2 method in data association: ";
-		
+		// Detection options
+		cout << " [Detection] " << endl;
+		cout << "	Detection method: "; detect_method == 0 ? cout << "ORB" : cout << "FAST+ORB"; cout << endl;
+		cout << "	Number of keypoints to detect: " << n_feats << endl;
+		DUMP_BOOL_VAR_TO_CONSOLE("	Use adaptive FAST threshold in ORB: ", orb_adaptive_fast_th)
+		cout << "	Initial FAST Threshold for ORB keypoints: " << detect_fast_th << endl;
+		cout << "	Minimum number of matches to force adaptation of FAST/ORB thresholds: " << adaptive_th_min_matches << endl;
+
+		// matching_options.dumpToConsole();
+
+		// Data association options
+		cout << " [Data Association] " << endl;
+		cout << "	Stage 2 filtering method: ";
 		switch( da_stage2_method )
 		{
 			case ST2M_NONE : cout << "None"; break;
@@ -424,11 +417,20 @@ typedef struct TSRBAStereoSLAMOptions
 			case ST2M_BOTH : cout << "Fundamental matrix + Change in pose"; break;
 		} 
 		cout << endl;
+		cout << "	Residual threshold: " << residual_th << endl;
+		cout << "	Max feat dist to ep-line in inter-frame matching: " << max_y_diff_epipolar << " px." << endl;
+		cout << "	Max distance between ORB descriptors for data association: " << max_orb_distance_da << endl;
+		cout << "	Probability of RANSAC Fundamental Matrix fit: " << ransac_fit_prob << endl;
+		cout << "	DB query result minimum value to keep running: " << query_score_th << endl;
 
-		cout << "	:: [LS]      DB query result threshold for performing DA: ";
-		query_score_th != 0 ? cout << query_score_th << endl : cout << "Adaptive" << endl;
-
-		DUMP_BOOL_VAR_TO_CONSOLE("	:: Use initial pose?: ", use_initial_pose)
+		// KF creation options
+		cout << " [Key-frame creation] " << endl;
+		cout << "	Initial threshold for testing new KF: " << max_translation << " m. and " << max_rotation << " deg." << endl;
+		cout << "	Update map when # of inter-frame (IF) matches is below: " << updated_matches_th << endl;
+		cout << "	Adapt movement th. when # of IF matches is below: " << up_matches_th_plus+updated_matches_th << endl;
+		cout << "	KF distance to consider a Loop Closure (LC): " << lc_distance << endl;
+		cout << "	Threshold for the number of tracked features from last KF: " << vo_id_tracking_th << endl;
+		DUMP_BOOL_VAR_TO_CONSOLE("	Use initial pose?: ", use_initial_pose)
 
 		if( pause_after_show_op )  system::pause();
 	} // end dumpToConsole
