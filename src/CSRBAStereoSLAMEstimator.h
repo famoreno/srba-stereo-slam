@@ -66,13 +66,29 @@ private:
 	gui::CDisplayWindow3DPtr 	m_win;
 
 	// data association
-	struct TDAMatchInfo
+	//struct TDAMatchInfo
+	//{
+	//	enum TDAMatchStatus{sTRACKED = 0, sNON_TRACKED, sREJ_SLOPE, sREJ_ORB, sREJ_FUND_MATRIX, sREJ_CHANGE_POSE, sREJ_CONSISTENCY};
+	//	TDAMatchStatus status;
+	//	size_t other_idx;
+	//	double distance;
+	//	TDAMatchInfo () : status(sTRACKED) , other_idx(INVALID_IDX), distance(0.0) {}
+	//};
+
+	struct TVectorDAMatchInfo
 	{
-		enum TDAMatchStatus{sTRACKED = 0, sNON_TRACKED, sREJ_ORB, sREJ_FUND_MATRIX, sREJ_CHANGE_POSE, sREJ_CONSISTENCY};
-		TDAMatchStatus status;
-		size_t other_idx;
-		double distance;
-		TDAMatchInfo () : status(sTRACKED) , other_idx(INVALID_IDX), distance(0.0) {}
+		enum TDAMatchStatus{sTRACKED = 0, sNON_TRACKED, sREJ_SLOPE, sREJ_ORB, sREJ_FUND_MATRIX, sREJ_CHANGE_POSE, sREJ_CONSISTENCY};
+		vector<TDAMatchStatus> m_status;
+		vector<cv::DMatch> m_matches;
+	
+		/** initialization constructor*/
+		TVectorDAMatchInfo( size_t s ) {
+			m_status.resize(s,sTRACKED);
+			m_matches.resize(s);
+		}
+
+		/** get size */
+		size_t size() { return m_status.size(); }
 	};
 	
 	// -- methods
@@ -115,7 +131,7 @@ private:
 		t_kf_da_info						& out_da,										// OUTPUT -- DA information from this KF wrt the other one
 		const CPose3DRotVec					& kf_ini_rel_pose = CPose3DRotVec() );			// oINPUT -- Initial estimation of the relative pose between the KFs
 
-	/** Compute the change in pose between KFs and find outliers not consistent with such pose change */
+	/** Compute the change in pose between frames and check keypoint residuals to find outliers (to be deleted) */
 	void m_detect_outliers_with_change_in_pose ( 
 		t_vector_pair_idx_distance			& other_matched, 
 		const CStereoSLAMKF					& this_kf, 
@@ -123,23 +139,44 @@ private:
 		vector<size_t>						& outliers,						// OUTPUT
 		const CPose3DRotVec					& kf_ini_rel_pose );
 
+	/** Compute the change in pose between frames and check keypoint residuals to find outliers */
 	void m_detect_outliers_with_change_in_pose ( 
-		deque<TDAMatchInfo>					& this_matches, 
+		TVectorDAMatchInfo					& this_matches, 
+		//deque<TDAMatchInfo>					& this_matches, 
 		const CStereoSLAMKF					& this_kf, 
 		const CStereoSLAMKF					& other_kf, 
 		const CPose3DRotVec					& kf_ini_rel_pose );
 
-    /** Compute the fundamental matrix between the left images and also between the right ones and find outliers */
+    /** Compute the fundamental matrix between the left images to find outliers (to be deleted) */
 	void m_detect_outliers_with_F ( 
 		const t_vector_pair_idx_distance	& other_matched, 
 		const CStereoSLAMKF					& this_kf, 
 		const CStereoSLAMKF					& other_kf, 
 		vector<size_t>						& outliers );					// OUTPUT
 
+	/** Compute the fundamental matrix between the left images to find outliers  */
 	void m_detect_outliers_with_F ( 
-		deque<TDAMatchInfo>					& this_matches,
+		TVectorDAMatchInfo					& this_matches,
+		//deque<TDAMatchInfo>					& this_matches,
 		const size_t						& num_tracked,
 		const CStereoSLAMKF					& this_kf, 
 		const CStereoSLAMKF					& other_kf );
+
+	/** Check matches directions to find outliers */
+	void m_detect_outliers_with_direction ( 
+		TVectorDAMatchInfo		& this_matches, 
+		// deque<TDAMatchInfo>		& this_matches, 
+		const size_t			& offset,
+		const CStereoSLAMKF		& this_kf, 
+		const CStereoSLAMKF		& other_kf );
+
+	/** Check ORB distances to find outliers */
+	void m_detect_outliers_with_orb_distance ( 
+		TVectorDAMatchInfo		& this_matches, 
+		//deque<TDAMatchInfo>		& this_matches, 
+		// const vector<DMatch>	& matL,
+		const CStereoSLAMKF		& this_kf, 
+		const CStereoSLAMKF		& other_kf );
+
 
 }; // end--CSRBAStereoSLAMEstimator

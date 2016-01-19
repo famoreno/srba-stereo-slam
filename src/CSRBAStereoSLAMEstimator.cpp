@@ -406,20 +406,6 @@ void CSRBAStereoSLAMEstimator::performStereoSLAM()
 
 				ASSERTDEB_( qResults.size() > 0 )
 
-				// update query score
-				// --> probably unused, remove
-				double qScoreTh = srba_options.query_score_th != 0 ? 
-					srba_options.query_score_th :
-					updateQueryScoreThreshold( m_last_num_tracked_feats );
-	
-				//if( qResults[0].Score > 0.5 )		// this KF is too similar to the most similar one
-				//{
-				//	VERBOSE_LEVEL(2) << "qResult[0] is significantly large --> skip the complete test." << endl;
-				//	if( voForceCheckTracking )
-				//		// m_reset_voEngine(); // set current frame IDs (in VO) 
-				//}
-				//else
-				//{
 				// analyse query results
 				bool confirmedLoopClosure = false;
 				TLoopClosureInfo similar_kfs_info;
@@ -539,7 +525,7 @@ void CSRBAStereoSLAMEstimator::performStereoSLAM()
 				if( general_options.show3D )
 				{
 					COpenGLScenePtr & scene = m_win->get3DSceneAndLock();
-					show_kf_numbers( scene, num_kfs/*m_keyframes.size()*/, qResults, qScoreTh );
+					show_kf_numbers( scene, num_kfs/*m_keyframes.size()*/, qResults, srba_options.query_score_th );
 					m_win->unlockAccess3DScene();
 					m_win->forceRepaint();
 				}
@@ -1374,7 +1360,7 @@ void CSRBAStereoSLAMEstimator::m_data_association(
 				VERBOSE_LEVEL(2) << "		:: Pose roughly estimated: " << initialPose << endl;
 			}
 		}
-
+		VERBOSE_LEVEL(2) << " ... entering internal_data_association ... " << endl;
 		rso::CStereoOdometryEstimator::TStereoOdometryResult stOdomResult;
 		out_da.push_back( t_kf_da_info() );
 		m_internal_data_association(
@@ -1383,7 +1369,7 @@ void CSRBAStereoSLAMEstimator::m_data_association(
 				curLDesc, curRDesc,		// the current descriptors
 				*out_da.rbegin(),		// output data association
 				initialPose);			// inkial pose of other KF camera wrt this one KF camera
-
+		VERBOSE_LEVEL(2) << " ... done " << endl;
 		// if we already have a higher number of features than the threshold, stop computing data association <-- likely to be deleted
 		// if( false && out_da.rbegin()->tracked_matches >= srba_options.updated_matches_th )
 		//	break;
@@ -1430,21 +1416,27 @@ void CSRBAStereoSLAMEstimator::m_internal_data_association(
 		other_kf.m_descriptors_left.row(  other_kf.m_matches[k].queryIdx ).copyTo( preLDesc.row(k) );
 		// other_kf.m_descriptors_right.row( other_kf.m_matches[k].trainIdx ).copyTo( preRDesc.row(k) );
 	}
-	
+
+	// NEW **********************************************
+	TVectorDAMatchInfo this_matches(this_num_matches);
+	// NEW **********************************************
+
 	//	:: create the matcher (bruteforce with Hamming distance)
 	BFMatcher matcher( NORM_HAMMING, false );
-	vector<DMatch> matL/*, matR*/;
+	//vector<DMatch> matL/*, matR*/;
 
 	//  :: match between left keypoint descriptors
-	matcher.match( this_left_desc /*query*/, preLDesc /*train*/, matL /* size of this_left_desc */);
+	//matcher.match( this_left_desc /*query*/, preLDesc /*train*/, matL /* size of this_left_desc */);
+	matcher.match( this_left_desc /*query*/, preLDesc /*train*/, this_matches.m_matches /* size of this_left_desc */);
 	// matcher.match( this_right_desc /*query*/, preRDesc /*train*/, matR /* size of this_right_desc */);
 	
 	if( general_options.debug )
 	{
-		string s = GENERATE_NAME_WITH_2KF_OUT( if_match, this_kf.m_kf_ID, other_kf.m_kf_ID ); 
+		string s = GENERATE_NAME_WITH_2KF_OUT( if_raw_match, this_kf.m_kf_ID, other_kf.m_kf_ID ); 
 		FILE *f_if =  mrpt::system::os::fopen( s.c_str(),"wt");
 		mrpt::system::os::fprintf(f_if,"%% OTHER_LX OTHER_LY THIS_LX THIS_LY DISTANCE\n");
-		for( vector<DMatch>::iterator it = matL.begin(); it != matL.end(); ++it )
+		//for( vector<DMatch>::iterator it = matL.begin(); it != matL.end(); ++it )
+		for( vector<DMatch>::iterator it = this_matches.m_matches.begin(); it != this_matches.m_matches.end(); ++it )
 		{
 			const size_t idxL = this_kf.m_matches[it->queryIdx].queryIdx;
 			const size_t idxR = other_kf.m_matches[it->trainIdx].queryIdx;
@@ -1459,16 +1451,57 @@ void CSRBAStereoSLAMEstimator::m_internal_data_association(
 	}
 
 	// NEW **********************************************
-	deque<TDAMatchInfo> this_matches(this_num_matches);
+	// deque<TDAMatchInfo> this_matches(this_num_matches);
 	// NEW **********************************************
+	// Filter outliers
+	size_t	filter0_inliers, filter1_inliers, filter2_inliers, filter3_inliers;
 
-	//	:: STAGE 1 --> filter out by ORB distance + consistency + uniqueness
+	//	:: FILTER by matches directions
+	if( srba_options.da_filter_by_direction )
+	{
+		m_detect_outliers_with_direction(
+			this_matches,
+			srba_options.stereo_camera.leftCamera.nrows,	// auxiliary offset
+			this_kf,
+			other_kf );
+	
+		filter0_inliers = 0;
+		for( size_t k = 0; k < this_matches.size(); ++k )
+			if( this_matches.m_status[k] == TVectorDAMatchInfo::sTRACKED )//if( this_matches[k].status == TDAMatchInfo::sTRACKED )
+				filter0_inliers++;
+
+		VERBOSE_LEVEL(2) << "[iDA " << this_kf.m_kf_ID << "->" << other_kf.m_kf_ID << "]: Filter [matches direction] tracked feats: " << filter0_inliers << "/" << this_num_matches <<  endl;
+	}
+	else filter0_inliers = this_num_matches;
+
+	//	:: FILTER by ORB distance + consistency + uniqueness
+	if( srba_options.da_filter_by_orb_distance )
+	{
+		m_detect_outliers_with_orb_distance(
+			this_matches,
+			//matL,
+			this_kf,
+			other_kf );
+
+		filter1_inliers = 0;
+		for( size_t k = 0; k < this_matches.size(); ++k )
+			if( this_matches.m_status[k] == TVectorDAMatchInfo::sTRACKED )// if( this_matches[k].status == TDAMatchInfo::sTRACKED )
+				filter1_inliers++;
+
+		VERBOSE_LEVEL(2) << "[iDA " << this_kf.m_kf_ID << "->" << other_kf.m_kf_ID << "]: Filter [ORB distance] tracked feats: " << filter1_inliers << "/" << filter0_inliers <<  endl;
+	}
+	else filter1_inliers = filter0_inliers;
+
+#if 0
 	t_vector_pair_idx_distance other_matched( other_num_matches, make_pair(INVALID_IDX, std::numeric_limits<float>::max()) );
 	vector<int> this_matched( this_num_matches, INVALID_IDX );
 	size_t stage1_counter = 0;
 	size_t st1_wrong_consistency = 0, st1_wrong_orb_distance = 0;
 	for( vector<DMatch>::iterator itL = matL.begin()/*, itR = matR.begin()*/; itL != matL.end(); ++itL/*, ++itR */)
 	{
+		if( this_matches[itL->queryIdx].status != TDAMatchInfo::sTRACKED )	// already rejected in previous stage
+			continue;
+
 		// consistency check between left and right tracked features
 		/*if( false && itL->trainIdx != itR->trainIdx )
 		{ 
@@ -1505,6 +1538,7 @@ void CSRBAStereoSLAMEstimator::m_internal_data_association(
 		this_matches[itL->queryIdx].other_idx	= itL->trainIdx;
 		
 		++stage1_counter;
+
 #if 0
 
 		// const float mean_distance = 0.5*(itL->distance+itR->distance);
@@ -1528,120 +1562,45 @@ void CSRBAStereoSLAMEstimator::m_internal_data_association(
 #endif
 
 	} // end-for
-
-	VERBOSE_LEVEL(2) << "[iDA " << this_kf.m_kf_ID << "->" << other_kf.m_kf_ID << "]: Stage 1 Tracked feats: " << stage1_counter << "/" << matL.size() <<  endl;
-	VERBOSE_LEVEL(2) << "	Rejected: " << st1_wrong_consistency << " matches for L-R inconsistency and " << st1_wrong_orb_distance << " matches for larger ORB distance (th=" << srba_options.max_orb_distance_da << ")." <<  endl;
-
-	// DEBUG -----------------------------------------------------------
-	/** /
-	if( general_options.debug )
-	{	
-		//	:: save first stage tracking
-
-		FILE *f1 = os::fopen( GENERATE_NAME_WITH_2KF_OUT( cand_stage1_other_tracked, this_kf.m_kf_ID, other_kf.m_kf_ID ), "wt" );
-		for( size_t m = 0; m < other_matched.size(); ++m )
-			os::fprintf( f1, "%d\n", other_matched[m].first );
-		os::fclose(f1);
-
-		FILE *f2 = os::fopen( GENERATE_NAME_WITH_2KF_OUT( cand_stage1_this_tracked, this_kf.m_kf_ID, other_kf.m_kf_ID ), "wt" );
-		for( size_t m = 0; m < this_matched.size(); ++m )
-			os::fprintf( f2, "%d\n", this_matched[m] );
-		os::fclose(f2);
-
-		FILE *f3 = os::fopen( GENERATE_NAME_WITH_2KF_OUT( stage1_tracked, this_kf.m_kf_ID, other_kf.m_kf_ID ), "wt" );
-		os::fprintf( f3, "%% THIS_KF_ID THIS_IDX THIS_ID THIS_UL THIS_VL THIS_UR THIS_VR OTHER_KF_ID OTHER_IDX OTHER_ID OTHER_UL OTHER_VL OTHER_UR OTHER_VR\n" );
-		for( size_t m = 0; m < other_matched.size(); ++m )
-		{
-			if( other_matched[m].first == INVALID_IDX ) continue;
-
-			// this
-			const size_t tm_idx = other_matched[m].first;
-			const size_t tm_id  = this_kf.m_matches_ID[tm_idx];
-			const cv::KeyPoint & tlkp = this_kf.m_keypoints_left[this_kf.m_matches[tm_idx].queryIdx];
-			const cv::KeyPoint & trkp = this_kf.m_keypoints_right[this_kf.m_matches[tm_idx].trainIdx];
-
-			// other
-			const size_t om_idx = m;
-			const size_t om_id  = other_kf.m_matches_ID[om_idx];
-			const cv::KeyPoint & olkp = other_kf.m_keypoints_left[other_kf.m_matches[om_idx].queryIdx];
-			const cv::KeyPoint & orkp = other_kf.m_keypoints_right[other_kf.m_matches[om_idx].trainIdx];
-
-			// dist
-			const double dist = other_matched[m].second;
-
-			os::fprintf( f3, "%d %d %d %.2f %.2f %.2f %.2f %d %d %d %.2f %.2f %.2f %.2f %.2f\n",
-				this_kf.m_kf_ID, tm_idx, tm_id, tlkp.pt.x, tlkp.pt.y, trkp.pt.x, trkp.pt.y,
-				other_kf.m_kf_ID, om_idx, om_id, olkp.pt.x, olkp.pt.y, orkp.pt.x, orkp.pt.y,
-				dist );
-		}
-		os::fclose(f3);
-	}
-	/**/
-	// --------------------------------------------------
-
-	size_t outliers_stage2 = 0;
-	//	:: STAGE 2 --> either use a fundamental matrix or the minimization residual to remove outliers
-	if( srba_options.da_stage2_method == TSRBAStereoSLAMOptions::ST2M_FUNDMATRIX ||
-		srba_options.da_stage2_method == TSRBAStereoSLAMOptions::ST2M_BOTH )
+#endif 
+	//	:: FILTER by distance to epipolar lines
+	if( srba_options.da_filter_by_fund_matrix )
 	{
-		if( stage1_counter < 15 )
+		if( filter1_inliers < 15 )
 		{
-			VERBOSE_LEVEL(2) << "[iDA " << this_kf.m_kf_ID << "->" << other_kf.m_kf_ID << "]: Stage 2 (F) Not enough input data." << endl;
+			VERBOSE_LEVEL(2) << "[iDA " << this_kf.m_kf_ID << "->" << other_kf.m_kf_ID << "]: Filter [fund. matrix] not enough input data: " << filter1_inliers << endl;
 			invalid = true;
 		}
+
 		else
 		{
-			//	:: using fundamental matrix
-			// vector<size_t> outliers;
-
 			//	:: detect inliers with fundamental matrix
 			m_detect_outliers_with_F(
 				this_matches,
-				stage1_counter,
+				filter1_inliers,
 				this_kf,
 				other_kf);
+		
+			filter2_inliers = 0;
+			for( size_t k = 0; k < this_matches.size(); ++k )
+				if( this_matches.m_status[k] == TVectorDAMatchInfo::sTRACKED ) //if( this_matches[k].status == TDAMatchInfo::sTRACKED )
+					filter2_inliers++;
 
-			/** /
-			m_detect_outliers_with_F(
-				other_matched,
-				this_kf,
-				other_kf,
-				outliers );
-			/**/
-#if 0
-			FILE *f = NULL;
-			if( general_options.debug ) f = os::fopen( GENERATE_NAME_WITH_2KF_OUT( fundmat_outliers, this_kf.m_kf_ID, other_kf.m_kf_ID ), "wt" );
-			// remove outliers from the fundamental matrix
-			// delete from 'other_matched'
-			for( size_t k = 0; k < outliers.size(); ++k )
-			{
-				other_matched[outliers[k]].first = INVALID_IDX;
-				if(f) os::fprintf(f,"%d\n",outliers[k]);
-			}
-			if(f) os::fclose(f);
-
-			outliers_stage2 = outliers.size();
-
-			VERBOSE_LEVEL(2) << "[iDA " << this_kf.m_kf_ID << "->" << other_kf.m_kf_ID << "]: Stage 2 (F) Outliers detected: " << outliers_stage2 << endl;
-#endif
+			VERBOSE_LEVEL(2) << "[iDA " << this_kf.m_kf_ID << "->" << other_kf.m_kf_ID << "]: Filter [fund. matrix] tracked feats: " << filter2_inliers << "/" << filter1_inliers <<  endl;
 		}
-	}
+	} // end-of
+	else  filter2_inliers = filter1_inliers;
 
-	if( srba_options.da_stage2_method == TSRBAStereoSLAMOptions::ST2M_CHANGEPOSE ||
-		srba_options.da_stage2_method == TSRBAStereoSLAMOptions::ST2M_BOTH )
+	//	:: FILTER by residual after change in pose
+	if( srba_options.da_filter_by_pose_change )
 	{
-		ASSERT_( stage1_counter >= outliers_stage2 )
-
-		if( stage1_counter - outliers_stage2 < 15 )
+		if( filter2_inliers < 15 )
 		{
-			VERBOSE_LEVEL(2) << "[iDA " << this_kf.m_kf_ID << "->" << other_kf.m_kf_ID << "]: Stage 2 (CP) Not enough input data." << endl;
+			VERBOSE_LEVEL(2) << "[iDA " << this_kf.m_kf_ID << "->" << other_kf.m_kf_ID << "]: Filter [pose change] not enough input data: " << filter2_inliers << endl;
 			invalid = true;
 		}
 		else
 		{
-			//	:: using residual of minimization
-			//vector<size_t> outliers;
-
 			//	:: detect outliers using the residual of the change in pose optimization process
 			m_detect_outliers_with_change_in_pose(
 				this_matches,
@@ -1649,55 +1608,49 @@ void CSRBAStereoSLAMEstimator::m_internal_data_association(
 				other_kf,
 				kf_ini_rel_pose );
 
-			/** /
-			m_detect_outliers_with_change_in_pose(
-				other_matched,
-				this_kf,
-				other_kf,
-				outliers,
-				kf_ini_rel_pose );
-			/**/
-#if 0
-			FILE *f = NULL;
-			if( general_options.debug ) f = os::fopen( GENERATE_NAME_WITH_2KF_OUT( changepose_outliers, this_kf.m_kf_ID, other_kf.m_kf_ID ), "wt" );
-			// remove outliers from the fundamental matrix
-			// delete from 'other_matched'
-			for( size_t k = 0; k < outliers.size(); ++k )
-			{
-				other_matched[outliers[k]].first = INVALID_IDX;
-				if(f) os::fprintf(f,"%d\n",outliers[k]);
-			}
-			if(f) os::fclose(f);
-
-			VERBOSE_LEVEL(2) << "[iDA " << this_kf.m_kf_ID << "->" << other_kf.m_kf_ID << "]: Stage 2 (CP) Outliers detected: " << outliers.size() << endl;
-
-			outliers_stage2 += outliers.size();
-#endif
+			filter3_inliers = 0;
+			for( size_t k = 0; k < this_matches.size(); ++k )
+				if( this_matches.m_status[k] == TVectorDAMatchInfo::sTRACKED ) //if( this_matches[k].status == TDAMatchInfo::sTRACKED )
+					filter3_inliers++;
+			
+			VERBOSE_LEVEL(2) << "[iDA " << this_kf.m_kf_ID << "->" << other_kf.m_kf_ID << "]: Filter [pose change] tracked feats: " << filter3_inliers << "/" << filter2_inliers <<  endl;
 		}
 	}
+	else
+		filter3_inliers = filter2_inliers;
+
+	// Filtering final report
+	VERBOSE_LEVEL(2) <<"[iDA " << this_kf.m_kf_ID << "->" << other_kf.m_kf_ID << "]: Final number of inliers: " << filter3_inliers << "/" << this_num_matches <<  endl;
 
 	if( !invalid )
 	{
 		// DEBUG ------------------------------------------------
 		FILE *f2 = NULL;
 		if( general_options.debug )
+		{
 			f2 = mrpt::system::os::fopen( GENERATE_NAME_WITH_2KF_OUT(if_match_after, this_kf.m_kf_ID, other_kf.m_kf_ID) ,"wt");
+			mrpt::system::os::fprintf(f2,"%%STATUS THIS_LU THIS_LV OTHER_LU OTHER_LV DISTANCE\n"); 
+		}
 		// ------------------------------------------------------
-		for( size_t k = 0; k < this_matched.size(); ++k )
+		for( size_t k = 0; k < this_matches.size(); ++k )
 		{
 			// .status
 			// .other_id
 			// .other_index
 			// .distance
-			if( this_matches[k].status == TDAMatchInfo::sTRACKED )
+			//if( this_matches[k].status == TDAMatchInfo::sTRACKED )
+			if( this_matches.m_status[k] == TVectorDAMatchInfo::sTRACKED )
 			{
-				out_da.tracking_info[k] = make_pair( this_matches[k].other_idx, this_matches[k].distance );
+				//out_da.tracking_info[k] = make_pair( this_matches[k].other_idx, this_matches[k].distance );
+				out_da.tracking_info[k] = make_pair( this_matches.m_matches[k].trainIdx, this_matches.m_matches[k].distance );
 				out_da.tracked_matches++;
 			}
 			if( general_options.debug )
 			{
-				const size_t idxL = this_kf.m_matches[matL[k].queryIdx].queryIdx;
-				const size_t idxR = other_kf.m_matches[matL[k].trainIdx].queryIdx;
+				//const size_t idxL = this_kf.m_matches[matL[k].queryIdx].queryIdx;
+				//const size_t idxR = other_kf.m_matches[matL[k].trainIdx].queryIdx;
+				const size_t idxL = this_kf.m_matches[this_matches.m_matches[k].queryIdx].queryIdx;
+				const size_t idxR = other_kf.m_matches[this_matches.m_matches[k].trainIdx].queryIdx;
 
 				const double tlu = this_kf.m_keypoints_left[idxL].pt.x;
 				const double tlv = this_kf.m_keypoints_left[idxL].pt.y;
@@ -1706,9 +1659,11 @@ void CSRBAStereoSLAMEstimator::m_internal_data_association(
 				const double olv = other_kf.m_keypoints_left[idxR].pt.y;
 
 				mrpt::system::os::fprintf(f2,"%d %.2f %.2f %.2f %.2f %.2f\n", 
-					this_matches[k].status, 
+					//this_matches[k].status, 
+					this_matches.m_status[k], 
 					tlu, tlv, olu, olv, 
-					this_matches[k].distance );
+					//this_matches[k].distance );
+					this_matches.m_matches[k].distance );
 			}
 		} // end--for
 #if 0		
@@ -1744,7 +1699,8 @@ void CSRBAStereoSLAMEstimator::m_internal_data_association(
 		// ------------------------------------------------------
 	} // end-if
 
-	VERBOSE_LEVEL(2) << "[iDA " << this_kf.m_kf_ID << "->" << other_kf.m_kf_ID << "]: Total tracked feats: " << out_da.tracked_matches << "/" << matL.size() << endl;
+	//VERBOSE_LEVEL(2) << "[iDA " << this_kf.m_kf_ID << "->" << other_kf.m_kf_ID << "]: Total tracked feats: " << out_da.tracked_matches << "/" << matL.size() << endl;
+	VERBOSE_LEVEL(2) << "[iDA " << this_kf.m_kf_ID << "->" << other_kf.m_kf_ID << "]: Total tracked feats: " << out_da.tracked_matches << "/" << this_matches.size() << endl;
 
 } // end-internal_performDataAssociation
 
@@ -1899,9 +1855,144 @@ bool CSRBAStereoSLAMEstimator::m_get_similar_kfs(
 	return found_potential_loop_closure;
 } // end--m_get_similar_kfs
 
-/** Compute the fundamental matrix between the left images and also between the right ones and find outliers */
+/** 
+	Check matches directions to find outliers
+*/
+void CSRBAStereoSLAMEstimator::m_detect_outliers_with_direction ( 
+		TVectorDAMatchInfo		& this_matches, // <TDAMatchInfo>		& this_matches, 
+		const size_t			& offset,
+		const CStereoSLAMKF		& this_kf, 
+		const CStereoSLAMKF		& other_kf )
+{
+	const int N_BINS = 36;
+	const int BIN_WIDTH = 10;
+	const size_t this_num_matches = this_matches.size();
+
+	// 1. build histogram
+	vector<size_t> hist(N_BINS,0);				// histogram
+	vector< deque<size_t> > hist_m(N_BINS);		// vector indices for each histogram bin
+
+	vector<double> ang(this_num_matches);
+
+	// 2. fill histogram
+	for( size_t k = 0; k < this_num_matches; ++k )
+	{
+		//if( this_matches[k].status == TDAMatchInfo::sTRACKED )
+		if( this_matches.m_status[k] == TVectorDAMatchInfo::sTRACKED )
+		{
+			const size_t this_idx_left  = this_kf.m_matches[k].queryIdx;
+			const size_t other_idx_left	= other_kf.m_matches[this_matches.m_matches[k].trainIdx].queryIdx;
+			//const size_t other_idx_left	= other_kf.m_matches[this_matches[k].other_idx].queryIdx;
+
+			const float tx = this_kf.m_keypoints_left[this_idx_left].pt.x;
+			const float ty = this_kf.m_keypoints_left[this_idx_left].pt.y;
+
+			const float ox = other_kf.m_keypoints_left[other_idx_left].pt.x;
+			const float oy = other_kf.m_keypoints_left[other_idx_left].pt.y + offset;	// 'offset' to reduce influence of keypoint location errors
+
+			double ang = 180/M_PI*atanf((oy-ty)/(ox-tx))+180.;	// range 0-360
+			const size_t bin = floor(ang/BIN_WIDTH);
+			hist[bin]++;
+			hist_m[bin].push_back(k);
+		}
+	} // end-for
+
+	// 3. find mode
+	int mode = 0, best_so_far = 0;
+	for( size_t k = 0; k < hist.size(); ++k )
+	{
+		if( hist[k] > best_so_far )
+		{
+			best_so_far = hist[k];
+			mode = k;
+		}
+	} // end-for
+
+	// 4. set limits (+-1 bin := +-10deg)
+	const size_t ibin_0 = mode == 0 ? N_BINS-1 : mode-1;
+	const size_t ibin_1 = mode;
+	const size_t ibin_2 = mode == N_BINS-1 ? 0 : mode+1;
+
+	// 5. set outliers
+	// update da info
+	for( size_t k = 0; k < N_BINS; ++k )
+	{
+		if( k == ibin_0 || k == ibin_1 || k == ibin_2 ) continue;
+		for( size_t k1 = 0; k1 < hist_m[k].size(); ++k1 )
+			this_matches.m_status[hist_m[k][k1]] = TVectorDAMatchInfo::sREJ_SLOPE; // this_matches[hist_m[k][k1]].status = TDAMatchInfo::sREJ_SLOPE;
+	} // end--for
+} // end-m_detect_outliers_with_slope
+
+/** 
+	Check ORB distances to find outliers
+*/
+void CSRBAStereoSLAMEstimator::m_detect_outliers_with_orb_distance ( 
+		//deque<TDAMatchInfo>		& this_matches, 
+		TVectorDAMatchInfo		& this_matches, 
+		// const vector<DMatch>	& matL,
+		const CStereoSLAMKF		& this_kf, 
+		const CStereoSLAMKF		& other_kf )
+{
+	const size_t this_num_matches = this_kf.m_matches.size();
+	const size_t other_num_matches = other_kf.m_matches.size();
+
+	t_vector_pair_idx_distance other_matched( other_num_matches, make_pair(INVALID_IDX, std::numeric_limits<float>::max()) );
+	vector<int> this_matched( this_num_matches, INVALID_IDX );
+	size_t stage1_counter = 0;
+	size_t st1_wrong_consistency = 0, st1_wrong_orb_distance = 0;
+	//for( vector<DMatch>::const_iterator itL = matL.begin()/*, itR = matR.begin()*/; itL != matL.end(); ++itL/*, ++itR */)
+	for( vector<DMatch>::const_iterator itL = this_matches.m_matches.begin()/*, itR = matR.begin()*/; itL != this_matches.m_matches.end(); ++itL/*, ++itR */)
+	{
+		//if( this_matches[itL->queryIdx].status != TDAMatchInfo::sTRACKED )	// already rejected in previous stage
+		if( this_matches.m_status[itL->queryIdx] != TVectorDAMatchInfo::sTRACKED )	// already rejected in previous stage
+			continue;
+
+		// consistency check between left and right tracked features
+		/*if( false && itL->trainIdx != itR->trainIdx )
+		{ 
+			st1_wrong_consistency++; 
+			continue; 
+		}*/																			
+		
+		// orb distance
+		if( itL->distance > srba_options.max_orb_distance_da/* || itR->distance > srba_options.max_orb_distance_da*/ ) 
+		{
+			this_matches.m_status[itL->queryIdx] = TVectorDAMatchInfo::sREJ_ORB;
+			st1_wrong_orb_distance++;
+			continue;
+		}
+		
+		// the other 'idx' was already matched but that match was better than this one
+		if( itL->distance > other_matched[itL->trainIdx].second )
+		{
+			this_matches.m_status[itL->queryIdx] = TVectorDAMatchInfo::sNON_TRACKED;
+			continue;
+		}
+
+		// the other 'idx' was already matched! 
+		if( other_matched[itL->trainIdx].first != INVALID_IDX )	
+		{
+			this_matches.m_status[other_matched[itL->trainIdx].first] = TVectorDAMatchInfo::sNON_TRACKED; // undo
+			--stage1_counter;
+		}
+		
+		// tracked
+		other_matched[itL->trainIdx].first		= itL->queryIdx;
+		other_matched[itL->trainIdx].second		= 
+		//this_matches.[itL->queryIdx].distance	= itL->distance;
+		//this_matches[itL->queryIdx].other_idx	= itL->trainIdx;
+		
+		++stage1_counter;
+	}
+
+} // end-m_detect_outliers_with_orb_distance
+
+/** 
+	Compute the fundamental matrix between the left images to find outliers
+*/
 void CSRBAStereoSLAMEstimator::m_detect_outliers_with_F ( 
-		deque<TDAMatchInfo>		& this_matches, 
+		//deque<TDAMatchInfo>		& this_matches, 
+		TVectorDAMatchInfo		& this_matches, 
 		const size_t			& num_tracked,
 		const CStereoSLAMKF		& this_kf, 
 		const CStereoSLAMKF		& other_kf )
@@ -1910,13 +2001,15 @@ void CSRBAStereoSLAMEstimator::m_detect_outliers_with_F (
 	cv::Mat p_other_left(num_tracked,2,cv::DataType<float>::type);
 	for( size_t k = 0, k0 = 0; k < this_matches.size(); ++k )
 	{
-		if( this_matches[k].status == TDAMatchInfo::sTRACKED )
+		//if( this_matches[k].status == TDAMatchInfo::sTRACKED )
+		if( this_matches.m_status[k] == TVectorDAMatchInfo::sTRACKED )
 		{
 			const size_t this_idx_left  = this_kf.m_matches[k].queryIdx;
 			p_this_left.at<float>(k0,0) = static_cast<float>(this_kf.m_keypoints_left[this_idx_left].pt.x);
 			p_this_left.at<float>(k0,1) = static_cast<float>(this_kf.m_keypoints_left[this_idx_left].pt.y);
 
-			const size_t other_idx_left	= other_kf.m_matches[this_matches[k].other_idx].queryIdx;
+			//const size_t other_idx_left	= other_kf.m_matches[this_matches[k].other_idx].queryIdx;
+			const size_t other_idx_left	= other_kf.m_matches[this_matches.m_matches[k].trainIdx].queryIdx;
 			p_other_left.at<float>(k0,0) = static_cast<float>(other_kf.m_keypoints_left[other_idx_left].pt.x);
 			p_other_left.at<float>(k0,1) = static_cast<float>(other_kf.m_keypoints_left[other_idx_left].pt.y);
 			k0++;
@@ -1930,14 +2023,18 @@ void CSRBAStereoSLAMEstimator::m_detect_outliers_with_F (
 	// update da info
 	for( size_t k = 0, k0 = 0; k < this_matches.size(); ++k )
 	{
-		if( this_matches[k].status == TDAMatchInfo::sTRACKED )
+		//if( this_matches[k].status == TDAMatchInfo::sTRACKED )
+		if( this_matches.m_status[k] == TVectorDAMatchInfo::sTRACKED )
 		{
 			if( left_inliers[k0++] == 0 )
-				this_matches[k].status = TDAMatchInfo::sREJ_FUND_MATRIX;
+				this_matches.m_status[k] = TVectorDAMatchInfo::sREJ_FUND_MATRIX; //this_matches[k].status = TDAMatchInfo::sREJ_FUND_MATRIX;
 		}
 	} // end--for
 } // end--m_detect_outliers_with_F
 
+/** 
+	Compute the fundamental matrix between the left images to find outliers 
+*/
 void CSRBAStereoSLAMEstimator::m_detect_outliers_with_F ( 
 		const t_vector_pair_idx_distance	& other_matched, 
 		const CStereoSLAMKF					& this_kf, 
@@ -1988,8 +2085,12 @@ void CSRBAStereoSLAMEstimator::m_detect_outliers_with_F (
 	}
 } // end-m_detect_outliers_with_F
 
+/** 
+	Compute the change in pose between frames and check keypoint residuals to find outliers 
+*/
 void CSRBAStereoSLAMEstimator::m_detect_outliers_with_change_in_pose ( 
-		deque<TDAMatchInfo>					& this_matches, 
+		//deque<TDAMatchInfo>					& this_matches, 
+		TVectorDAMatchInfo					& this_matches, 
 		const CStereoSLAMKF					& this_kf, 
 		const CStereoSLAMKF					& other_kf, 
 		const CPose3DRotVec					& kf_ini_rel_pose )
@@ -1999,8 +2100,9 @@ void CSRBAStereoSLAMEstimator::m_detect_outliers_with_change_in_pose (
 	tracked_pairs.reserve( this_kf.m_matches.size() );
 	for( size_t k = 0; k < this_matches.size(); ++k )
 	{
-		if( this_matches[k].status == TDAMatchInfo::sTRACKED )
-			tracked_pairs.push_back( make_pair( this_matches[k].other_idx /*other_idx*/, k /*this_idx*/) );
+		//if( this_matches[k].status == TDAMatchInfo::sTRACKED )
+		if( this_matches.m_status[k] == TVectorDAMatchInfo::sTRACKED )
+			tracked_pairs.push_back( make_pair( this_matches.m_matches[k].trainIdx /*other_idx*/, k /*this_idx*/) ); //tracked_pairs.push_back( make_pair( this_matches[k].other_idx /*other_idx*/, k /*this_idx*/) );
 	}
 	size_t num_tracked_stage1 = tracked_pairs.size();
 
@@ -2031,8 +2133,9 @@ void CSRBAStereoSLAMEstimator::m_detect_outliers_with_change_in_pose (
 		VERBOSE_LEVEL(1) << "	WARNING: Change in pose could not be estimated, all points are set to outliers" << endl;
 		for( size_t k = 0; k < this_matches.size(); ++k )
 		{
-			if( this_matches[k].status == TDAMatchInfo::sTRACKED )
-				this_matches[k].status = TDAMatchInfo::sREJ_CHANGE_POSE;
+			//if( this_matches[k].status == TDAMatchInfo::sTRACKED )
+			if( this_matches.m_status[k] == TVectorDAMatchInfo::sTRACKED )
+				this_matches.m_status[k] = TVectorDAMatchInfo::sREJ_CHANGE_POSE; // this_matches[k].status = TDAMatchInfo::sREJ_CHANGE_POSE;
 		}
 		return;
 	}
@@ -2040,16 +2143,20 @@ void CSRBAStereoSLAMEstimator::m_detect_outliers_with_change_in_pose (
 	// remove points with large residuals
 	for( size_t k = 0, k0 = 0; k < this_matches.size(); ++k )
 	{
-		if( this_matches[k].status == TDAMatchInfo::sTRACKED )
+		//if( this_matches[k].status == TDAMatchInfo::sTRACKED )
+		if( this_matches.m_status[k] == TVectorDAMatchInfo::sTRACKED )
 		{
 			// we've got a residual for this
 			if( odometry_result.out_residual[k0] > srba_options.residual_th )
-				this_matches[k].status = TDAMatchInfo::sREJ_CHANGE_POSE;
+				this_matches.m_status[k] = TVectorDAMatchInfo::sREJ_CHANGE_POSE; // this_matches[k].status = TDAMatchInfo::sREJ_CHANGE_POSE;
 			k0++;
 		}
 	} // end-for
 } // end--m_detect_outliers_with_change_in_pose
 
+/** 
+	Compute the change in pose between frames and check keypoint residuals to find outliers 
+*/
 void CSRBAStereoSLAMEstimator::m_detect_outliers_with_change_in_pose ( 
 		t_vector_pair_idx_distance			& other_matched, 
 		const CStereoSLAMKF					& this_kf, 

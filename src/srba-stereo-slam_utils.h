@@ -235,7 +235,13 @@ typedef struct TSRBAStereoSLAMOptions
 
 	bool	use_initial_pose;						//!< (def:true) -- Use an initial estimation of the position of this KF taken from the odometry
 	int		vo_id_tracking_th;						//!< (def:40) -- Threshold for the number of tracked features from last KF
-	
+
+	// da-filters
+	bool	da_filter_by_direction,					//!< (def:false) -- Filter DA matches by their direction
+			da_filter_by_orb_distance,				//!< (def:true) -- Filter DA matches by their ORB distance
+			da_filter_by_fund_matrix,				//!< (def:true) -- Filter DA matches by computing left-left fundamental matrix and checking distance to epipolar lines
+			da_filter_by_pose_change;				//!< (def:true) -- Filter DA matches by computing pose change and checking reprojection errors
+			
 	// general
 	double	residual_th, 
 			max_rotation,							//!< (def:15) -- Rotation limit for checking new KFs (in degrees)
@@ -271,6 +277,10 @@ typedef struct TSRBAStereoSLAMOptions
 			query_score_th(0.04),
 			use_initial_pose(true),
 			vo_id_tracking_th(40), 
+			da_filter_by_direction(false),
+			da_filter_by_orb_distance(true),
+			da_filter_by_fund_matrix(true),
+			da_filter_by_pose_change(true),
 			residual_th(50), 
 			max_rotation(15.), 
 			max_translation(0.30),
@@ -307,6 +317,10 @@ typedef struct TSRBAStereoSLAMOptions
 		query_score_th						= o.query_score_th;
 		use_initial_pose					= o.use_initial_pose;
 		vo_id_tracking_th					= o.vo_id_tracking_th;
+		da_filter_by_direction				= o.da_filter_by_direction;
+		da_filter_by_orb_distance			= o.da_filter_by_orb_distance;
+		da_filter_by_fund_matrix			= o.da_filter_by_fund_matrix;
+		da_filter_by_pose_change			= o.da_filter_by_pose_change;
 		residual_th							= o.residual_th;
 		max_rotation						= o.max_rotation;
 		max_translation						= o.max_translation;
@@ -359,6 +373,11 @@ typedef struct TSRBAStereoSLAMOptions
 		MRPT_LOAD_CONFIG_VAR(max_orb_distance_da,double,config,"SRBA_DATA_ASSOCIATION")	
 		MRPT_LOAD_CONFIG_VAR(query_score_th,double,config,"SRBA_DATA_ASSOCIATION")
 
+		MRPT_LOAD_CONFIG_VAR(da_filter_by_direction,bool,config,"SRBA_DATA_ASSOCIATION")
+		MRPT_LOAD_CONFIG_VAR(da_filter_by_orb_distance,bool,config,"SRBA_DATA_ASSOCIATION")
+		MRPT_LOAD_CONFIG_VAR(da_filter_by_fund_matrix,bool,config,"SRBA_DATA_ASSOCIATION")
+		MRPT_LOAD_CONFIG_VAR(da_filter_by_pose_change,bool,config,"SRBA_DATA_ASSOCIATION")
+
 		// new kf creation
 		MRPT_LOAD_CONFIG_VAR(max_rotation,double,config,"SRBA_KF_CREATION")				
 		MRPT_LOAD_CONFIG_VAR(max_translation,double,config,"SRBA_KF_CREATION")			
@@ -408,6 +427,11 @@ typedef struct TSRBAStereoSLAMOptions
 
 		// Data association options
 		cout << " [Data Association] " << endl;
+		DUMP_BOOL_VAR_TO_CONSOLE("	Filter by match direction?: ", da_filter_by_direction)
+		DUMP_BOOL_VAR_TO_CONSOLE("	Filter by ORB distance?: ", da_filter_by_orb_distance)
+		DUMP_BOOL_VAR_TO_CONSOLE("	Filter by fundamental matrix?: ", da_filter_by_fund_matrix)
+		DUMP_BOOL_VAR_TO_CONSOLE("	Filter by pose change?: ", da_filter_by_pose_change)
+
 		cout << "	Stage 2 filtering method: ";
 		switch( da_stage2_method )
 		{
@@ -417,6 +441,7 @@ typedef struct TSRBAStereoSLAMOptions
 			case ST2M_BOTH : cout << "Fundamental matrix + Change in pose"; break;
 		} 
 		cout << endl;
+
 		cout << "	Residual threshold: " << residual_th << endl;
 		cout << "	Max feat dist to ep-line in inter-frame matching: " << max_y_diff_epipolar << " px." << endl;
 		cout << "	Max distance between ORB descriptors for data association: " << max_orb_distance_da << endl;
@@ -525,8 +550,3 @@ inline mrpt::math::TPoint3D projectMatchTo3D(
 	const double b_d = baseline/(fl*(cur-ur)+fr*(ul-cul));
 	return mrpt::math::TPoint3D(b_d*fr*(ul-cul),b_d*fr*(vl-cvl),b_d*fl*fr);
  } // end-projectMatchTo3D
-
-inline double updateQueryScoreThreshold( const size_t & numberTrackedFeats )
-{
-	return UNINITIALIZED_TRACKED_NUMBER ? 0.2 : std::max( 0.15, std::min(0.5, (-0.35/50.0)*(numberTrackedFeats-75)+0.15 ) );
-} // end-updateQueryScoreThreshold
