@@ -10,7 +10,7 @@ More info about SRBA can be found [here](http://www.mrpt.org/srba)
 
 * CMake (>=2.4.5)
 * OpenCV (>=2.4.8, >=3.0.0 not supported due to DBoW2 not supporting it) 
-* [DBoW2] (http://webdiis.unizar.es/~dorian/index.php?p=32) (1.0.2) (Check dependencies for this library)
+* [DBoW2](https://github.com/dorian3d/DBoW2) (1.0.2) (Check dependencies for this library)
 * [MRPT](https://github.com/MRPT/mrpt) (>=1.3.0)
 * [SRBA](https://github.com/MRPT/srba) (Header-only library, must be downloaded from GitHub for now)
 * [stereo-vo](https://github.com/famoreno/stereo-vo)
